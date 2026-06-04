@@ -5,7 +5,10 @@
 const ORIGINAL_FETCH = window.fetch;
 window.fetch = function (input, init) {
     if (typeof input === "string" && input.startsWith("/api/")) {
-        const base = window.location.origin.includes("5000") ? "" : "http://localhost:5000";
+        const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.hostname === "";
+        const base = isLocalhost 
+            ? (window.location.origin.includes("5000") ? "" : "http://localhost:5000")
+            : "";
         return ORIGINAL_FETCH(base + input, init);
     }
     return ORIGINAL_FETCH(input, init);
