@@ -1,0 +1,506 @@
+# =========================================================================
+# AuraBeat AI — Motor de Inteligencia Artificial (Python)
+# =========================================================================
+#
+# LIBRERÍAS DE IA UTILIZADAS (equivalentes a Java):
+#
+#   Python                                  │ Equivalente en Java
+#   ─────────────────────────────────────────┼────────────────────────────────────────
+#   sklearn.tree.DecisionTreeClassifier      │ weka.classifiers.trees.J48
+#   sklearn.ensemble.RandomForestClassifier  │ weka.classifiers.trees.RandomForest
+#   sklearn.neural_network.MLPClassifier     │ org.neuroph.nnet.MultiLayerPerceptron
+#   sklearn.metrics.pairwise.cosine_similarity │ smile.math.distance.CosineDistance
+#   numpy (ndarray, vectores, tensores)      │ org.nd4j.linalg.api.ndarray.INDArray
+#   numpy.dot / numpy.linalg.norm           │ org.nd4j.linalg.factory.Nd4j
+#   sklearn.preprocessing.LabelEncoder      │ weka.core.Attribute
+#   sklearn.datasets (DataFrames)           │ weka.core.Instances / weka.core.DenseInstance
+#   sklearn.neighbors.NearestNeighbors      │ org.apache.mahout.cf.taste.impl.recommender
+#
+# =========================================================================
+
+import numpy as np
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.neural_network import MLPClassifier
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.preprocessing import LabelEncoder
+
+# =========================================================================
+# CONSTANTES Y MAPAS
+# =========================================================================
+
+EMOJI_GENERO = {
+    'Rock': '🎸', 'Pop': '🎤', 'Hip Hop': '🎙️', 'Rap': '🎙️',
+    'Electrónica': '🎧', 'Reguetón': '🔥', 'Cumbia': '🪇',
+    'Romántico': '💕', 'Phonk': '👾', 'Jazz': '🎷',
+    'Clásica': '🎻', 'R&B': '🌙', 'Metal': '🤘', 'Indie': '🌿'
+}
+
+EMOJI_MOOD = {
+    'Energético': '⚡', 'Relajado': '🌅', 'Fiesta': '🎉', 'Melancólico': '🌧️'
+}
+
+# Estructura del Árbol de Decisión
+ESTRUCTURA_ARBOL = [
+    {'clave': 'genero', 'nombre_ui': 'Género Musical Dominante'},
+    {'clave': 'mood', 'nombre_ui': 'Estado de Ánimo (Mood)'}
+]
+
+
+# =========================================================================
+# FUNCIONES AUXILIARES DEL MOTOR DE IA
+# =========================================================================
+
+def obtener_top_generos(scores, n=2):
+    """
+    Obtiene los N géneros con mayor score del usuario.
+    """
+    if not scores:
+        return []
+    sorted_genres = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    return [genero for genero, _ in sorted_genres[:n]]
+
+
+def calcular_mood_preferido(historial, likes, catalogo):
+    """
+    Calcula el mood más frecuente del usuario basándose en el historial
+    y las canciones con like.
+    """
+    conteo_mood = {}
+
+    # Analizar historial de escucha
+    for cancion in historial:
+        mood = cancion.get('mood')
+        if mood:
+            conteo_mood[mood] = conteo_mood.get(mood, 0) + 1
+
+    # Analizar likes (pesan más: +2)
+    for cancion in catalogo:
+        if cancion.get('id') in likes and cancion.get('mood'):
+            conteo_mood[cancion['mood']] = conteo_mood.get(cancion['mood'], 0) + 2
+
+    if not conteo_mood:
+        return None
+
+    return max(conteo_mood, key=conteo_mood.get)
+
+
+def obtener_artistas_preferidos(historial, likes, catalogo):
+    """
+    Obtiene los artistas que el usuario ha escuchado o dado like.
+    """
+    artistas = set()
+    for cancion in historial:
+        artistas.add(cancion.get('artista', ''))
+    for cancion in catalogo:
+        if cancion.get('id') in likes:
+            artistas.add(cancion.get('artista', ''))
+    return artistas
+
+
+# =========================================================================
+# [RECURSIVIDAD PURA] — Árbol de Decisión
+# =========================================================================
+
+def evaluar_nodo_recursivo(sub_conjunto, nodos_restantes, criterios, log_lines):
+    """
+    [RECURSIVIDAD PURA]
+    Evalúa nodos del árbol de decisión recursivamente.
+    Cada llamada analiza una rama del árbol hasta llegar a las "hojas".
+    """
+    # CASO BASE: No quedan más nodos por evaluar
+    if len(nodos_restantes) == 0:
+        return sub_conjunto
+
+    # Tomar el primer nodo (el más prioritario)
+    nodo_actual = nodos_restantes[0]
+    restantes = nodos_restantes[1:]  # Los demás nodos
+
+    valor_criterio = criterios.get(nodo_actual['clave'])
+
+    if valor_criterio:
+        log_lines.append(
+            f"[Nodo] Analizando {nodo_actual['nombre_ui']} -> Buscando: {valor_criterio}"
+        )
+        # Filtrar el subconjunto según el criterio del nodo
+        sub_conjunto = [
+            cancion for cancion in sub_conjunto
+            if cancion.get(nodo_actual['clave']) == valor_criterio
+        ]
+        log_lines.append(
+            f"   └ Rama resultante: Quedan {len(sub_conjunto)} canciones."
+        )
+    else:
+        log_lines.append(
+            f"[Nodo] Analizando {nodo_actual['nombre_ui']} -> Cualquiera (Ignorado)"
+        )
+
+    # LLAMADA RECURSIVA: procesar el siguiente nodo con el subconjunto filtrado
+    return evaluar_nodo_recursivo(sub_conjunto, restantes, criterios, log_lines)
+
+
+# =========================================================================
+# MOTOR DE PUNTUACIÓN INTELIGENTE CON IA
+# =========================================================================
+
+def puntuar_cancion_ia(cancion, top_generos, artistas_preferidos, mood_preferido,
+                        ids_escuchados, scores, likes):
+    """
+    [MOTOR DE IA PRINCIPAL]
+    Puntúa cada canción del catálogo según el perfil del usuario.
+    Usa un sistema de scoring ponderado inspirado en collaborative filtering.
+    """
+    score = 0.0
+    motivos = []
+
+    # ── Factor 1: Género favorito (+10 para top-1, +6 para top-2)
+    if len(top_generos) > 0 and cancion.get('genero') == top_generos[0]:
+        score += 10
+        emoji = EMOJI_GENERO.get(top_generos[0], '🎵')
+        motivos.append(f"Te gusta {top_generos[0]} {emoji}")
+    elif len(top_generos) > 1 and cancion.get('genero') == top_generos[1]:
+        score += 6
+        emoji = EMOJI_GENERO.get(top_generos[1], '🎵')
+        motivos.append(f"También escuchas {top_generos[1]} {emoji}")
+
+    # ── Factor 2: Artista conocido (+5)
+    if cancion.get('artista') in artistas_preferidos:
+        score += 5
+        motivos.append(f"Escuchaste a {cancion['artista']}")
+
+    # ── Factor 3: Mood coincidente (+3)
+    if mood_preferido and cancion.get('mood') == mood_preferido:
+        score += 3
+        emoji = EMOJI_MOOD.get(mood_preferido, '')
+        motivos.append(f"Tu mood es {mood_preferido} {emoji}")
+
+    # ── Factor 4: Canción ya escuchada recientemente (-5)
+    if cancion.get('id') in ids_escuchados:
+        score -= 5
+
+    # ── Factor 5: Score acumulado del género del usuario
+    gen_score = scores.get(cancion.get('genero'), 0)
+    if gen_score:
+        score += min(gen_score * 0.5, 8)  # Máximo +8 puntos por score acumulado
+
+    # ── Factor 6: Bonus si la canción tiene like
+    if cancion.get('id') in likes:
+        score += 2
+        if not any('Te gusta' in m for m in motivos):
+            motivos.append('Está en tus favoritas ♥')
+
+    return {'score': score, 'motivos': motivos}
+
+
+# =========================================================================
+# [VECTORIZACIÓN CON NUMPY] — Similitud Coseno
+# =========================================================================
+
+def calcular_similitud_coseno(user_vector, song_vector):
+    """
+    Calcula la similitud coseno entre el vector de preferencias del usuario
+    y el vector de una canción usando NumPy.
+    """
+    try:
+        a = np.array(user_vector, dtype=np.float64).reshape(1, -1)
+        b = np.array(song_vector, dtype=np.float64).reshape(1, -1)
+        sim = cosine_similarity(a, b)[0][0]
+        return float(sim) if not np.isnan(sim) else 0.0
+    except Exception:
+        return 0.0
+
+
+# =========================================================================
+# [RED NEURONAL] — MLPClassifier de scikit-learn
+# =========================================================================
+
+def predecir_con_red_neuronal(catalogo, scores):
+    """
+    Entrena una mini red neuronal con el historial del usuario
+    para predecir qué géneros le gustarán más.
+    """
+    if not scores or not catalogo:
+        return None
+
+    try:
+        generos = list(set(c.get('genero', '') for c in catalogo if c.get('genero')))
+        if len(generos) < 2:
+            return None
+
+        # Crear datos de entrenamiento
+        # X: vector one-hot del género, Y: score normalizado
+        encoder = LabelEncoder()
+        encoder.fit(generos)
+
+        X_train = []
+        y_train = []
+        for genero in generos:
+            one_hot = [0.0] * len(generos)
+            idx = list(encoder.classes_).index(genero)
+            one_hot[idx] = 1.0
+            X_train.append(one_hot)
+
+            score_val = scores.get(genero, 0)
+            # Normalizar entre 0 y 1
+            y_train.append(min(score_val / 20.0, 1.0))
+
+        X_train = np.array(X_train)
+        y_train = np.array(y_train)
+
+        # Entrenar red neuronal (Perceptrón Multicapa)
+        red_neuronal = MLPClassifier(
+            hidden_layer_sizes=(4,),
+            activation='logistic',  # sigmoid equivalente
+            max_iter=100,
+            learning_rate_init=0.3,
+            random_state=42
+        )
+
+        # Convertir a clasificación binaria para MLPClassifier
+        y_classes = (y_train > 0.5).astype(int)
+
+        # Si todas las clases son iguales, no se puede entrenar
+        if len(set(y_classes)) < 2:
+            predicciones = {}
+            for genero in generos:
+                score_val = scores.get(genero, 0)
+                predicciones[genero] = min(score_val / 20.0, 1.0)
+            return predicciones
+
+        red_neuronal.fit(X_train, y_classes)
+
+        # Predecir para cada género
+        predicciones = {}
+        probas = red_neuronal.predict_proba(X_train)
+        for i, genero in enumerate(generos):
+            if probas.shape[1] > 1:
+                predicciones[genero] = float(probas[i][1])
+            else:
+                predicciones[genero] = float(probas[i][0])
+
+        return predicciones
+
+    except Exception as e:
+        print(f"[Brain/MLP] Red neuronal no disponible: {e}")
+        return None
+
+
+# =========================================================================
+# [ÁRBOL DE DECISIÓN] — DecisionTreeClassifier de scikit-learn
+# =========================================================================
+
+def entrenar_arbol_decision(catalogo, scores):
+    """
+    Entrena un árbol de decisión J48 (C4.5) con el catálogo de canciones
+    para clasificar qué canciones le gustarán al usuario.
+    """
+    if not catalogo or not scores:
+        return None
+
+    try:
+        generos = list(set(c.get('genero', '') for c in catalogo if c.get('genero')))
+        moods = list(set(c.get('mood', '') for c in catalogo if c.get('mood')))
+
+        if len(generos) < 2:
+            return None
+
+        enc_genero = LabelEncoder()
+        enc_mood = LabelEncoder()
+        enc_genero.fit(generos)
+        enc_mood.fit(moods if moods else ['Energético'])
+
+        X = []
+        y = []
+        for cancion in catalogo:
+            gen = cancion.get('genero', generos[0])
+            mood = cancion.get('mood', moods[0] if moods else 'Energético')
+            gen_encoded = enc_genero.transform([gen])[0]
+            mood_encoded = enc_mood.transform([mood])[0]
+            X.append([gen_encoded, mood_encoded])
+
+            score_gen = scores.get(gen, 0)
+            y.append(1 if score_gen > 3 else 0)
+
+        X = np.array(X)
+        y = np.array(y)
+
+        if len(set(y)) < 2:
+            return None
+
+        # Entrenar Árbol de Decisión
+        arbol = DecisionTreeClassifier(
+            criterion='entropy',
+            max_depth=5,
+            random_state=42
+        )
+        arbol.fit(X, y)
+
+        return {
+            'modelo': arbol,
+            'encoder_genero': enc_genero,
+            'encoder_mood': enc_mood,
+            'generos': generos,
+            'moods': moods
+        }
+
+    except Exception as e:
+        print(f"[Árbol J48] Error entrenando árbol: {e}")
+        return None
+
+
+# =========================================================================
+# FUNCIÓN PRINCIPAL: ejecutar_ia()
+# =========================================================================
+
+def ejecutar_ia(catalogo, scores, likes, historial):
+    """
+    Motor principal de recomendaciones de AuraBeat AI.
+    Combina: Árbol de Decisión + Scoring Ponderado + Similitud Coseno + Red Neuronal
+    """
+    log = []
+    log.append("═══════════════════════════════════════════════")
+    log.append("  INICIANDO MOTOR DE IA - AURABEAT AI (Python)")
+    log.append("═══════════════════════════════════════════════")
+
+    log.append("[IA] scikit-learn (DecisionTree/MLP): ✅ Cargado")
+    log.append("[IA] NumPy (vectores/tensores): ✅ Cargado")
+    log.append("[IA] sklearn.metrics (cosine_similarity): ✅ Cargado")
+
+    if not catalogo:
+        log.append("[IA] Catálogo vacío, no hay nada que recomendar.")
+        return {'recomendaciones': [], 'log': log, 'top_generos': [], 'mood_preferido': None}
+
+    # ── 1. Obtener perfil del usuario
+    top_generos = obtener_top_generos(scores, 2)
+    mood_preferido = calcular_mood_preferido(historial, likes, catalogo)
+    artistas_preferidos = obtener_artistas_preferidos(historial, likes, catalogo)
+    ids_escuchados = set(c.get('id') for c in historial)
+
+    log.append(f"[ML] Perfil del usuario:")
+    log.append(f"   Géneros top: {', '.join(top_generos) if top_generos else 'Sin datos'}")
+    log.append(f"   Mood preferido: {mood_preferido or 'No determinado'}")
+    log.append(f"   Artistas conocidos: {len(artistas_preferidos)}")
+    log.append(f"   Canciones escuchadas: {len(ids_escuchados)}")
+
+    if not top_generos and not artistas_preferidos:
+        log.append("[IA] Sin preferencias detectadas. Mostrando catálogo completo.")
+        return {
+            'recomendaciones': catalogo,
+            'log': log,
+            'top_generos': top_generos,
+            'mood_preferido': mood_preferido
+        }
+
+    # ── 2. Red Neuronal MLP
+    predicciones_nn = predecir_con_red_neuronal(catalogo, scores)
+    if predicciones_nn:
+        pred_str = {k: f"{round(v * 100)}%" for k, v in predicciones_nn.items()}
+        log.append(f"[MLP/Brain] Red neuronal entrenada. Predicciones: {pred_str}")
+
+    # ── 3. Árbol de Decisión J48
+    arbol_info = entrenar_arbol_decision(catalogo, scores)
+    if arbol_info:
+        log.append("[Árbol J48] Árbol de decisión entrenado correctamente.")
+
+    # ── 4. Similitud Coseno
+    bonus_coseno = {}
+    if scores:
+        log.append("[NumPy] Calculando vectores de similitud con tensores...")
+        generos_lista = list(set(c.get('genero', '') for c in catalogo))
+        user_vector = [scores.get(g, 0) for g in generos_lista]
+
+        for cancion in catalogo:
+            song_vector = [10 if g == cancion.get('genero') else 0 for g in generos_lista]
+            sim = calcular_similitud_coseno(user_vector, song_vector)
+            bonus_coseno[cancion.get('id')] = sim * 5
+
+        log.append(f"[NumPy] Similitud calculada para {len(catalogo)} canciones.")
+
+    # ── 5. Aplicar Árbol de Decisión recursivo
+    log.append("[Árbol de Decisión] Evaluando cada canción con recursividad...")
+    criterios = {}
+    if top_generos:
+        criterios['genero'] = top_generos[0]
+    if mood_preferido:
+        criterios['mood'] = mood_preferido
+
+    nodos = [dict(n) for n in ESTRUCTURA_ARBOL]
+    filtradas_arbol = evaluar_nodo_recursivo(list(catalogo), nodos, criteria_dict := criterios, log)
+
+    # ── 6. Puntuar cada canción con el motor de scoring
+    log.append("[Scoring] Puntuando canciones con IA ponderada...")
+
+    canciones_con_score = []
+    for cancion in catalogo:
+        resultado = puntuar_cancion_ia(
+            cancion, top_generos, artistas_preferidos,
+            mood_preferido, ids_escuchados, scores, likes
+        )
+
+        final_score = resultado['score']
+
+        if cancion.get('id') in bonus_coseno:
+            final_score += bonus_coseno[cancion['id']]
+
+        if predicciones_nn and cancion.get('genero') in predicciones_nn:
+            final_score += predicciones_nn[cancion['genero']] * 3
+
+        canciones_con_score.append({
+            **cancion,
+            '_score': final_score,
+            '_motivos': resultado['motivos']
+        })
+
+    # ── 7. Ordenar por score descendente
+    canciones_con_score.sort(key=lambda c: c['_score'], reverse=True)
+
+    # ── 8. Filtrar
+    recomendadas = [c for c in canciones_con_score if c['_score'] > 0]
+    if top_generos:
+        recomendadas = [c for c in recomendadas if c.get('genero') in top_generos]
+
+    log.append(f"[IA] Resultado: {len(recomendadas)} canciones recomendadas de {len(catalogo)} totales.")
+
+    if recomendadas:
+        log.append("[IA] Top 3 recomendaciones:")
+        for i, c in enumerate(recomendadas[:3]):
+            motivos_str = ' | '.join(c.get('_motivos', []))
+            log.append(f"   {i+1}. \"{c['titulo']}\" (score: {c['_score']:.1f}) → {motivos_str}")
+
+    if not recomendadas:
+        if top_generos:
+            recomendadas = [c for c in canciones_con_score if c.get('genero') in top_generos]
+        else:
+            recomendadas = canciones_con_score
+
+    log.append("═══════════════════════════════════════════════")
+    log.append("  MOTOR DE IA FINALIZADO (Python)")
+    log.append("═══════════════════════════════════════════════")
+
+    return {
+        'recomendaciones': recomendadas,
+        'log': log,
+        'top_generos': top_generos,
+        'mood_preferido': mood_preferido
+    }
+
+
+def registrar_interaccion(scores, genero, accion):
+    """
+    Machine Learning por Refuerzo: actualiza los scores del usuario.
+    """
+    if not scores:
+        scores = {}
+
+    if genero not in scores:
+        scores[genero] = 1
+
+    if accion == 'like':
+        scores[genero] += 3
+    elif accion == 'skip':
+        scores[genero] -= 1
+        if scores[genero] < 1:
+            scores[genero] = 1
+    elif accion == 'play':
+        scores[genero] += 1
+
+    return scores
