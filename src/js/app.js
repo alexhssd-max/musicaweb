@@ -1370,6 +1370,7 @@ function obtenerCoverUrl(artista, cancion = null) {
 
 function reproducirCancion(cancion, coverGradient) {
     cancionActual = cancion;
+    localStorage.setItem('aurabeat_current_song', JSON.stringify(cancion));
     document.getElementById("player-title").textContent = cancion.titulo;
     document.getElementById("player-artist").textContent = cancion.artista;
     document.getElementById("btn-play").textContent = "⏸";
@@ -1907,6 +1908,7 @@ function mostrarRecomendacionesVacias() {
 function cargarCancionEnPlayer(cancion) {
     if (!cancion) return;
     cancionActual = cancion;
+    localStorage.setItem('aurabeat_current_song', JSON.stringify(cancion));
 
     if (typeof catalogoActual !== 'undefined') {
         indiceActual = catalogoActual.findIndex(c => c.id === cancion.id);
@@ -2379,10 +2381,34 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
     }
 
-    const btnInicio = document.getElementById("btn-nav-inicio");
-    if (btnInicio) btnInicio.click();
+    const activeTab = localStorage.getItem('aurabeat_active_tab') || 'btn-nav-inicio';
+    const btnTab = document.getElementById(activeTab);
+    if (btnTab) {
+        btnTab.click();
+    } else {
+        const btnInicio = document.getElementById("btn-nav-inicio");
+        if (btnInicio) btnInicio.click();
+    }
 
-    if (catalogoActual && catalogoActual.length > 0) {
+    let songLoaded = false;
+    const savedSongStr = localStorage.getItem('aurabeat_current_song');
+    if (savedSongStr) {
+        try {
+            const savedSong = JSON.parse(savedSongStr);
+            const matchedSong = catalogoActual.find(c => c.id === savedSong.id);
+            if (matchedSong) {
+                cargarCancionEnPlayer(matchedSong);
+                songLoaded = true;
+            } else if (savedSong && savedSong.id) {
+                cargarCancionEnPlayer(savedSong);
+                songLoaded = true;
+            }
+        } catch (e) {
+            console.error("Error loading saved song:", e);
+        }
+    }
+
+    if (!songLoaded && catalogoActual && catalogoActual.length > 0) {
         cargarCancionEnPlayer(catalogoActual[0]);
     }
 });
