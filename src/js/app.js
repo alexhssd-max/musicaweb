@@ -957,11 +957,54 @@ async function registrarInteraccion(cancion, accion) {
     }
 }
 
+function mostrarEsqueletoCargaRecomendaciones() {
+    const container = document.getElementById("songs-list");
+    if (!container) return;
+    
+    container.classList.remove("grid-view");
+    const trackHeader = document.getElementById("track-header");
+    if (trackHeader) trackHeader.style.display = "none";
+    
+    let rowsHtml = "";
+    for (let i = 0; i < 5; i++) {
+        rowsHtml += `
+            <div class="skeleton-row" style="margin-bottom: 8px;">
+                <div class="skeleton-cell num" style="grid-column: 1;"></div>
+                <div class="col-title" style="grid-column: 2;">
+                    <div class="skeleton-cell img"></div>
+                    <div class="col-title-text">
+                        <div class="skeleton-cell title"></div>
+                        <div class="skeleton-cell artist"></div>
+                    </div>
+                </div>
+                <div class="skeleton-cell genre" style="grid-column: 3;"></div>
+                <div class="skeleton-cell duration" style="grid-column: 4;"></div>
+                <div></div>
+            </div>
+        `;
+    }
+    
+    container.innerHTML = `
+        <div class="recommendations-loading">
+            <div class="loading-ai-header">
+                <div class="loading-ai-icon">🧠</div>
+                <div class="loading-ai-text">
+                    <h4>AuraBeat AI está analizando tus gustos</h4>
+                    <p>Consultando el motor de inteligencia artificial y generando recomendaciones personalizadas...</p>
+                </div>
+            </div>
+            ${rowsHtml}
+        </div>
+    `;
+}
+
 window.ejecutarIA = async function() {
     if (!usuarioActivo || usuarioActivo.nombre === "Invitado") {
         mostrarEstadoVacio();
         return;
     }
+    
+    mostrarEsqueletoCargaRecomendaciones();
     logIA("Consultando motor de IA en servidor Python...");
 
     try {
@@ -995,6 +1038,10 @@ window.ejecutarIA = async function() {
     } catch (e) {
         logIA("❌ Error al ejecutar IA en el servidor: " + e.message);
         console.error(e);
+        const container = document.getElementById("songs-list");
+        if (container) {
+            container.innerHTML = "<p style='color:var(--text-muted); grid-column: 1 / -1; padding: 20px;'>❌ Error al cargar recomendaciones de IA. Por favor, intenta de nuevo.</p>";
+        }
     }
 };
 
