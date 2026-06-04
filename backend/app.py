@@ -1,23 +1,3 @@
-# =========================================================================
-# AuraBeat AI — Servidor Backend (Python / Flask)
-# =========================================================================
-#
-# LIBRERÍAS DE PYTHON UTILIZADAS (equivalentes a Java):
-#
-#   Python (pip)           │ Equivalente en Java
-#   ───────────────────────┼────────────────────────────────────
-#   flask                  │ javax.servlet / Spring Boot
-#   flask_cors             │ Spring CORS Configuration
-#   requests               │ java.net.HttpURLConnection / OkHttp
-#   json                   │ org.json.JSONObject / Gson
-#   base64                 │ java.util.Base64
-#   os                     │ java.lang.System
-#   hashlib                │ java.security.MessageDigest
-#
-# Motor de IA:
-#   ia_engine.py           │ Ver equivalencias dentro del archivo
-#
-# =========================================================================
 
 import os
 import json

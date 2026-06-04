@@ -2271,11 +2271,29 @@ body {
 
     .app-shell {
         grid-template-columns: 1fr;
-        height: calc(100vh - 172px);
-        /* 100vh - Player (~112px) - Bottom Nav (60px) */
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 172px;
+        height: auto !important;
         padding: 0;
         gap: 0;
-        margin-bottom: 16px;
+        margin-bottom: 0;
+    }
+
+    body.comunidad-activa .player-bar {
+        display: none !important;
+    }
+
+    body.comunidad-activa .app-shell {
+        bottom: 60px !important;
+    }
+
+    .center-content-wrapper {
+        border: none !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
     }
 
     /* Transformar Sidebar en un Bottom Navigation Bar estilo app nativa */

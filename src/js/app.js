@@ -1593,7 +1593,11 @@ function cambiarTabActivo(idBoton) {
         }
     }
 
-
+    if (idBoton === "btn-nav-comunidad") {
+        document.body.classList.add('comunidad-activa');
+    } else {
+        document.body.classList.remove('comunidad-activa');
+    }
 }
 
 function renderizarBiblioteca() {
