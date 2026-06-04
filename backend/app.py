@@ -81,6 +81,10 @@ def supabase_upload(bucket_path, file_data, content_type):
 def index():
     return send_file(os.path.join(app.static_folder, 'index.html'))
 
+@app.route('/health')
+def health():
+    return jsonify({"status": "ok"}), 200
+
 
 # =========================================================================
 # API — Catálogo de Canciones
