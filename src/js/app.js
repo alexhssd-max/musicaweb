@@ -75,6 +75,14 @@ const CATALOGO_MOCK = [
 ];
 
 let catalogoActual = [];
+try {
+    const cached = localStorage.getItem('aurabeat_cached_catalogo');
+    if (cached) {
+        catalogoActual = JSON.parse(cached);
+    }
+} catch (e) {
+    console.error("Error reading cached catalog:", e);
+}
 let historialEscucha = [];
 
 async function cargarCatalogo() {
@@ -82,16 +90,42 @@ async function cargarCatalogo() {
         const res = await supabaseFetch("/catalogo");
         if (!res.ok) throw new Error("Error al cargar catálogo");
         const data = await res.json();
-        if (data.length === 0) {
-            catalogoActual = [];
-        } else {
-            catalogoActual = data.sort((a, b) => a.titulo.localeCompare(b.titulo));
+        
+        let newCatalogo = [];
+        if (data.length > 0) {
+            newCatalogo = data.sort((a, b) => a.titulo.localeCompare(b.titulo));
+        }
+
+        const isDifferent = JSON.stringify(newCatalogo) !== JSON.stringify(catalogoActual);
+        
+        catalogoActual = newCatalogo;
+        window.catalogoActual = catalogoActual;
+        localStorage.setItem('aurabeat_cached_catalogo', JSON.stringify(catalogoActual));
+
+        if (isDifferent) {
+            // Re-renderizar la vista actual para mostrar las canciones actualizadas (excepto en Comunidad)
+            const activeTab = localStorage.getItem('aurabeat_active_tab') || 'btn-nav-inicio';
+            if (activeTab !== 'btn-nav-comunidad') {
+                const btnTab = document.getElementById(activeTab);
+                if (btnTab) btnTab.click();
+            }
+
+            // Actualizar el dropdown de artistas
+            const artistaDropdown = document.getElementById('search-artista');
+            if (artistaDropdown && catalogoActual.length > 0) {
+                artistaDropdown.innerHTML = '<option value="">Todos los Artistas</option>';
+                const artistas = [...new Set(catalogoActual.map(c => c.artista))].sort((a, b) => a.localeCompare(b));
+                artistas.forEach(artista => {
+                    const opt = document.createElement('option');
+                    opt.value = artista;
+                    opt.textContent = artista;
+                    artistaDropdown.appendChild(opt);
+                });
+            }
         }
     } catch (e) {
-        console.warn("Servidor no disponible, usando catálogo vacío:", e);
-        catalogoActual = [];
+        console.warn("Servidor no disponible, usando catálogo local o vacío:", e);
     }
-    window.catalogoActual = catalogoActual;
 }
 
 function tieneHistorial() {
@@ -2312,8 +2346,10 @@ function inicializarNavegacion() {
 // ARRANQUE
 // =========================================================================
 document.addEventListener("DOMContentLoaded", async () => {
-    await asegurarAdminCreado();
-    await asegurarTablaComunidad();
+    // Inicializar tareas de servidor en segundo plano
+    asegurarAdminCreado();
+    asegurarTablaComunidad();
+
     inicializarModal();
     inicializarReproductor();
     inicializarNavegacion();
@@ -2367,9 +2403,17 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
     }
 
-    await cargarCatalogo();
+    // Cargar inmediatamente la última pestaña seleccionada (render rápido con caché)
+    const activeTab = localStorage.getItem('aurabeat_active_tab') || 'btn-nav-inicio';
+    const btnTab = document.getElementById(activeTab);
+    if (btnTab) {
+        btnTab.click();
+    } else {
+        const btnInicio = document.getElementById("btn-nav-inicio");
+        if (btnInicio) btnInicio.click();
+    }
 
-    // Poblar el dropdown de artistas con los artistas del catálogo
+    // Poblar el dropdown de artistas con el catálogo en caché
     const artistaDropdown = document.getElementById('search-artista');
     if (artistaDropdown && catalogoActual.length > 0) {
         const artistas = [...new Set(catalogoActual.map(c => c.artista))].sort((a, b) => a.localeCompare(b));
@@ -2381,15 +2425,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
     }
 
-    const activeTab = localStorage.getItem('aurabeat_active_tab') || 'btn-nav-inicio';
-    const btnTab = document.getElementById(activeTab);
-    if (btnTab) {
-        btnTab.click();
-    } else {
-        const btnInicio = document.getElementById("btn-nav-inicio");
-        if (btnInicio) btnInicio.click();
-    }
-
+    // Cargar inmediatamente la última canción escuchada (render rápido con caché)
     let songLoaded = false;
     const savedSongStr = localStorage.getItem('aurabeat_current_song');
     if (savedSongStr) {
@@ -2411,6 +2447,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!songLoaded && catalogoActual && catalogoActual.length > 0) {
         cargarCancionEnPlayer(catalogoActual[0]);
     }
+
+    // Cargar catálogo actualizado desde el servidor en segundo plano
+    cargarCatalogo();
 });
 
 // =========================================================================
