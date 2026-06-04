@@ -480,6 +480,7 @@ function mostrarToast(msg) {
 // =========================================================================
 let audioPlayer = new Audio();
 audioPlayer.volume = 0.8;
+audioPlayer.preload = 'metadata';
 let shuffleActivo = false;
 let repeatActivo = false;
 
@@ -1338,7 +1339,7 @@ function renderizarCanciones(lista) {
             </div>
             <div class="col-title">
                 <div class="col-title-img" style="background: ${gradient}; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center;">
-                    <img src="${coverUrl}" alt="Cover" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.onerror=null; this.src='https://whqxgrijuctfjwvydxpr.supabase.co/storage/v1/object/public/canciones/logodesinvoz.png';">
+                    <img src="${coverUrl}" alt="Cover" loading="lazy" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.onerror=null; this.src='https://whqxgrijuctfjwvydxpr.supabase.co/storage/v1/object/public/canciones/logodesinvoz.png';">
                 </div>
                 <div class="col-title-text">
                     <span class="list-title">${c.titulo}</span>
@@ -1669,7 +1670,7 @@ function renderizarBiblioteca() {
 
         div.innerHTML = `
             <div class="album-cover">
-                <img src="${coverUrl}" class="album-cover-img" alt="Cover de ${album.artista}" onerror="this.onerror=null; this.src='https://whqxgrijuctfjwvydxpr.supabase.co/storage/v1/object/public/canciones/logodesinvoz.png';">
+                <img src="${coverUrl}" class="album-cover-img" alt="Cover de ${album.artista}" loading="lazy" onerror="this.onerror=null; this.src='https://whqxgrijuctfjwvydxpr.supabase.co/storage/v1/object/public/canciones/logodesinvoz.png';">
             </div>
             <div class="album-info">
                 <div class="album-title">${album.genero}</div>
@@ -2675,7 +2676,7 @@ function renderizarCancionesPlaylist(lista, playlist, playlistIdx) {
             </div>
             <div class="col-title">
                 <div class="col-title-img" style="background: ${gradient}; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center;">
-                    <img src="${coverUrl}" alt="Cover" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.onerror=null; this.src='https://whqxgrijuctfjwvydxpr.supabase.co/storage/v1/object/public/canciones/logodesinvoz.png';">
+                    <img src="${coverUrl}" alt="Cover" loading="lazy" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.onerror=null; this.src='https://whqxgrijuctfjwvydxpr.supabase.co/storage/v1/object/public/canciones/logodesinvoz.png';">
                 </div>
                 <div class="col-title-text">
                     <span class="list-title">${c.titulo}</span>
