@@ -301,15 +301,85 @@ function renderFeed() {
   setupFeedObserver();
 }
 
-// --- REPRODUCTOR DE YOUTUBE - PLAYER GLOBAL ÚNICO ---
+// --- REPRODUCTOR DE YOUTUBE - IFRAME POR CARD ---
 let feedObserver = null;
 let isTransitioning = false;
-
-// Player global único - evita destruir/crear en cada cambio de video
-let globalPlayer = null;
+let globalPlayer = null;       // mantenemos por compatibilidad con togglePlayPause
 let globalPlayerReady = false;
 let pendingVideoId = null;
 let globalPlayerContainer = null;
+let currentActiveIframe = null; // referencia al iframe activo actual
+
+function setActiveVideo(index) {
+  if (index < 0 || index >= state.feedVideos.length) return;
+  if (isTransitioning) return;
+  isTransitioning = true;
+
+  logSkipIfEarly();
+  state.activeCardIndex = index;
+  state.watchLogged = false;
+  state.watchStartTime = Date.now();
+
+  const video = state.feedVideos[index];
+
+  // Actualizar ambient glow
+  const ambientGlow = document.getElementById("bg-ambient-glow");
+  if (ambientGlow && video && video.id) {
+    ambientGlow.style.backgroundImage = `url(https://img.youtube.com/vi/${video.id}/hqdefault.jpg)`;
+  }
+
+  const container = document.getElementById(`player-container-${index}`);
+  if (!container) { isTransitioning = false; return; }
+
+  // Quitar el iframe del card anterior (si existe)
+  document.querySelectorAll(".tiktok-card .yt-embed-iframe").forEach(el => {
+    const parentCard = el.closest(".tiktok-card");
+    const cardIndex = parentCard ? parseInt(parentCard.getAttribute("data-index"), 10) : -1;
+    if (cardIndex !== index) {
+      el.remove();
+    }
+  });
+
+  // Si este container ya tiene un iframe activo, no hacer nada
+  if (container.querySelector(".yt-embed-iframe")) {
+    globalPlayerReady = true;
+    isTransitioning = false;
+    fetchComments(video.id);
+    return;
+  }
+
+  // Insertar nuevo iframe embed de YouTube directamente en el container
+  const iframe = document.createElement("iframe");
+  iframe.className = "yt-embed-iframe";
+  iframe.src = `https://www.youtube-nocookie.com/embed/${video.id}?autoplay=1&controls=1&rel=0&modestbranding=1&loop=1&playlist=${video.id}&enablejsapi=1`;
+  iframe.allow = "autoplay; encrypted-media; fullscreen";
+  iframe.setAttribute("allowfullscreen", "");
+  iframe.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;border:none;z-index:10;pointer-events:none;";
+
+  container.innerHTML = ""; // limpiar loader
+  container.appendChild(iframe);
+
+  currentActiveIframe = iframe;
+  globalPlayerReady = true;
+  state.activePlayer = null; // no usamos YT API, el iframe controla
+  isPlaying = true;
+
+  // Iniciar timer de retención
+  clearInterval(state.watchTimer);
+  state.watchTimer = setInterval(() => {
+    checkWatchRetention();
+  }, 1000);
+
+  setTimeout(() => { isTransitioning = false; }, 400);
+  fetchComments(video.id);
+}
+
+function destroyPlayer() {
+  clearInterval(state.watchTimer);
+  // Con iframes directos, no hay nada que destruir globalmente
+}
+
+
 
 function setupFeedObserver() {
   if (feedObserver) feedObserver.disconnect();
@@ -422,62 +492,53 @@ function destroyPlayer() {
     try { globalPlayer.pauseVideo(); } catch(e) {}
   }
 }
-
+// Track play state manually since we don't have YT Player API access
+let isPlaying = true;
 
 function togglePlayPause() {
-  const player = state.activePlayer || globalPlayer;
-  if (!player || !globalPlayerReady) return;
+  if (!currentActiveIframe) return;
 
   const index = state.activeCardIndex;
   const overlay = document.getElementById(`play-pause-${index}`);
 
-  const stateNum = player.getPlayerState();
-  if (stateNum === YT.PlayerState.PLAYING) {
-    player.pauseVideo();
-    overlay.textContent = "▶";
-    overlay.classList.add("visible");
+  if (isPlaying) {
+    // Pausar: enviar postMessage al iframe de YouTube
+    currentActiveIframe.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+    if (overlay) {
+      overlay.textContent = "▶";
+      overlay.classList.add("visible");
+    }
+    isPlaying = false;
   } else {
-    player.playVideo();
-    overlay.classList.remove("visible");
+    // Reanudar
+    currentActiveIframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+    if (overlay) {
+      overlay.classList.remove("visible");
+    }
+    isPlaying = true;
   }
 }
 
-// Monitorea el estado de la reproducción
+// Con iframes embed, no recibimos eventos de estado directamente.
+// Usamos un timer simple basado en el tiempo de permanencia para tracking de retención.
 function handlePlayerStateChange(event) {
-  const index = state.activeCardIndex;
-
-  // Guardar duración real del video
-  if (event.data === YT.PlayerState.PLAYING) {
-    const player = state.activePlayer || globalPlayer;
-    state.videoDuration = player ? player.getDuration() : 0;
-
-    // Iniciar timer de monitoreo de retención del video
-    clearInterval(state.watchTimer);
-    state.watchTimer = setInterval(() => {
-      checkWatchRetention();
-    }, 1000);
-  }
-
-  // Si el video termina completamente: auto-scroll al siguiente y enviar feedback positivo completo
-  if (event.data === YT.PlayerState.ENDED) {
-    logInteraction(state.feedVideos[index].id, "complete");
-    // Scroll suave hacia abajo
-    const feed = document.getElementById("tiktok-feed");
-    feed.scrollBy({ top: feed.clientHeight, behavior: "smooth" });
-  }
+  // No se usa con iframes directos, mantenemos por compatibilidad
 }
 
 // --- SISTEMA DE LOGGING DE FEEDBACK (Métricas de la IA) ---
 
 function checkWatchRetention() {
-  const player = state.activePlayer || globalPlayer;
-  if (!player || state.watchLogged) return;
+  if (state.watchLogged) return;
 
   try {
     const elapsed = (Date.now() - state.watchStartTime) / 1000;
 
-    // Si ve más del 80% del video, registramos una reproducción completa (complete)
+    // Si ve más del 80% del video o más de 60 segundos, registramos reproducción completa
     if (state.videoDuration > 0 && elapsed >= state.videoDuration * 0.8) {
+      state.watchLogged = true;
+      logInteraction(state.feedVideos[state.activeCardIndex].id, "complete");
+    } else if (elapsed >= 60) {
+      // Fallback: si no tenemos duración pero lleva 60s viendo, es "complete"
       state.watchLogged = true;
       logInteraction(state.feedVideos[state.activeCardIndex].id, "complete");
     }
@@ -485,6 +546,7 @@ function checkWatchRetention() {
     clearInterval(state.watchTimer);
   }
 }
+
 
 function logSkipIfEarly() {
   // Si pasa de video muy rápido (antes de 5 segundos o del 20% del video), es un skip (negativo)
