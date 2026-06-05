@@ -52,13 +52,68 @@ ESTRUCTURA_ARBOL = [
 # FUNCIONES AUXILIARES DEL MOTOR DE IA
 # =========================================================================
 
-def obtener_top_generos(scores, n=2):
+def calcular_top_generos_historial_reciente(historial, n_canciones=20):
     """
-    Obtiene los N géneros con mayor score del usuario.
+    Calcula géneros favoritos basándose SOLO en las últimas N canciones escuchadas.
+    Esto permite detectar cambios de gusto durante la sesión (ej. 2-3 horas).
+    """
+    recientes = historial[-n_canciones:]  # Tomar las últimas N canciones
+    conteo = {}
+    for cancion in recientes:
+        gen = cancion.get('genero')
+        if gen:
+            conteo[gen] = conteo.get(gen, 0) + 1
+    return conteo
+
+
+def aplicar_decaimiento(scores, factor=0.85):
+    """
+    Factor de Olvido: reduce todos los scores en un 15% para que géneros
+    no escuchados recientemente pierdan peso con el tiempo.
+    El mínimo es 1 para no borrar géneros completamente.
     """
     if not scores:
+        return {}
+    return {gen: max(1.0, round(score * factor, 2)) for gen, score in scores.items()}
+
+
+def detectar_cambio_genero(top_generos_actuales, generos_anteriores):
+    """
+    Compara los géneros top actuales con los anteriores para detectar
+    si el gusto del usuario ha cambiado durante la sesión.
+    """
+    if not generos_anteriores:
+        return False, []
+    cambios = [g for g in top_generos_actuales if g not in generos_anteriores]
+    hubo_cambio = len(cambios) > 0
+    return hubo_cambio, cambios
+
+
+def obtener_top_generos(scores, historial=None, n=2):
+    """
+    Híbrido: combina 70% del historial reciente (últimas 20 canciones)
+    con 30% de los scores históricos para detectar cambios de gusto
+    tanto al entrar a la página como durante sesiones largas.
+    """
+    if not scores and not historial:
         return []
-    sorted_genres = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+
+    # Calcular scores del historial reciente
+    reciente_conteo = calcular_top_generos_historial_reciente(historial or [], n_canciones=20)
+
+    # Combinar: 70% historial reciente + 30% scores históricos
+    scores_combinados = {}
+    todos_generos = set(list((scores or {}).keys()) + list(reciente_conteo.keys()))
+
+    for gen in todos_generos:
+        score_hist = (scores or {}).get(gen, 0)
+        score_rec = reciente_conteo.get(gen, 0) * 3  # Escalar conteo reciente para que sea comparable
+        scores_combinados[gen] = round(score_rec * 0.70 + score_hist * 0.30, 2)
+
+    if not scores_combinados:
+        return []
+
+    sorted_genres = sorted(scores_combinados.items(), key=lambda x: x[1], reverse=True)
     return [genero for genero, _ in sorted_genres[:n]]
 
 
@@ -416,7 +471,7 @@ def entrenar_random_forest(catalogo, scores):
 # FUNCIÓN PRINCIPAL: ejecutar_ia()
 # =========================================================================
 
-def ejecutar_ia(catalogo, scores, likes, historial):
+def ejecutar_ia(catalogo, scores, likes, historial, generos_anteriores=None):
     """Motor principal de recomendaciones de AuraBeat AI con Random Forest y epsilon‑greedy."""
     log = []
     log.append("═══════════════════════════════════════════════")
@@ -427,25 +482,32 @@ def ejecutar_ia(catalogo, scores, likes, historial):
 
     if not catalogo:
         log.append("[IA] Catálogo vacío, no hay nada que recomendar.")
-        return {'recomendaciones': [], 'log': log, 'top_generos': [], 'mood_preferido': None}
+        return {'recomendaciones': [], 'log': log, 'top_generos': [], 'mood_preferido': None, 'cambio_genero': False}
 
-    # 1. Perfil del usuario
-    top_generos = obtener_top_generos(scores, 2)
+    # 1. Perfil del usuario — usando híbrido: 70% historial reciente + 30% scores históricos
+    top_generos = obtener_top_generos(scores, historial=historial, n=2)
     mood_preferido = calcular_mood_preferido(historial, likes, catalogo)
     artistas_preferidos = obtener_artistas_preferidos(historial, likes, catalogo)
     ids_escuchados = set(c.get('id') for c in historial)
     avg_bpm, avg_energia = calcular_media_bpm_energia(historial, likes, catalogo)
 
+    # Detectar si el gusto cambió respecto a la sesión/visita anterior
+    hubo_cambio, generos_nuevos = detectar_cambio_genero(top_generos, generos_anteriores or [])
+
     log.append(f"[ML] Perfil del usuario:")
-    log.append(f"   Géneros top: {', '.join(top_generos) if top_generos else 'Sin datos'}")
+    log.append(f"   Géneros top (híbrido reciente+histórico): {', '.join(top_generos) if top_generos else 'Sin datos'}")
+    if hubo_cambio:
+        log.append(f"   🔄 CAMBIO DE GUSTO DETECTADO! Nuevos géneros: {', '.join(generos_nuevos)}")
+    else:
+        log.append(f"   ✔️ Gustos estables (sin cambio detectado)")
     log.append(f"   Mood preferido: {mood_preferido or 'No determinado'}")
     log.append(f"   BPM medio: {int(avg_bpm)} | Energia media: {int(avg_energia)}")
     log.append(f"   Artistas conocidos: {len(artistas_preferidos)}")
-    log.append(f"   Canciones escuchadas: {len(ids_escuchados)}")
+    log.append(f"   Canciones escuchadas en sesión: {len(ids_escuchados)}")
 
     if not top_generos and not artistas_preferidos:
         log.append("[IA] Sin preferencias detectadas. Mostrando catálogo completo.")
-        return {'recomendaciones': catalogo, 'log': log, 'top_generos': top_generos, 'mood_preferido': mood_preferido}
+        return {'recomendaciones': catalogo, 'log': log, 'top_generos': top_generos, 'mood_preferido': mood_preferido, 'cambio_genero': False}
 
     # Filtrar el catálogo si el usuario ya tiene géneros preferidos definidos (máximo 2)
     catalogo_filtrado = catalogo
@@ -534,15 +596,26 @@ def ejecutar_ia(catalogo, scores, likes, historial):
     log.append("  MOTOR DE IA FINALIZADO (Python)")
     log.append("═══════════════════════════════════════════════")
 
-    return {'recomendaciones': recomendadas, 'log': log, 'top_generos': top_generos, 'mood_preferido': mood_preferido}
+    return {'recomendaciones': recomendadas, 'log': log, 'top_generos': top_generos, 'mood_preferido': mood_preferido, 'cambio_genero': hubo_cambio}
 
 
-def registrar_interaccion(scores, genero, accion):
+def registrar_interaccion(scores, genero, accion, aplicar_decay=False):
     """
     Machine Learning por Refuerzo: actualiza los scores del usuario.
+    - Si aplicar_decay=True: aplica Factor de Olvido (×0.85) a los demás géneros
+      antes de sumar puntos al género activo. Esto acelera el cambio de gusto
+      en sesiones largas sin necesidad de resetear.
     """
     if not scores:
         scores = {}
+
+    # Factor de Olvido en sesión: los otros géneros pierden 2% por interacción
+    # (más suave que el 15% de página, para que no sea demasiado agresivo)
+    if aplicar_decay:
+        DECAY_SESION = 0.98
+        for g in scores:
+            if g != genero:
+                scores[g] = max(1.0, round(scores[g] * DECAY_SESION, 2))
 
     if genero not in scores:
         scores[genero] = 1

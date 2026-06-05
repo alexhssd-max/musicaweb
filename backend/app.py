@@ -10,6 +10,7 @@ from flask_cors import CORS
 from ia_engine import (
     ejecutar_ia,
     registrar_interaccion,
+    aplicar_decaimiento,
     obtener_top_generos,
     calcular_mood_preferido
 )
@@ -244,13 +245,19 @@ def api_recomendar():
     scores = body.get('scores', {})
     likes = body.get('likes', [])
     historial = body.get('historial', [])
+    generos_anteriores = body.get('generos_anteriores', [])   # Los top genres de la visita anterior
+    es_nueva_visita = body.get('es_nueva_visita', False)      # True cuando el usuario entra a la página
+
+    # Si el usuario acaba de entrar a la página, aplicar Factor de Olvido (15%) a los scores históricos
+    if es_nueva_visita and scores:
+        scores = aplicar_decaimiento(scores, factor=0.85)
 
     resp = supabase_request("/rest/v1/canciones?select=*&order=id.asc")
     catalogo = []
     if resp and resp.ok:
         catalogo = resp.json()
 
-    resultado = ejecutar_ia(catalogo, scores, likes, historial)
+    resultado = ejecutar_ia(catalogo, scores, likes, historial, generos_anteriores=generos_anteriores)
 
     nombre = body.get('nombre')
     if nombre and nombre != "Invitado":
@@ -264,6 +271,13 @@ def api_recomendar():
             method="PATCH",
             data=update_data
         )
+        # Si se aplicó decaimiento, persistir los nuevos scores en Supabase
+        if es_nueva_visita and scores:
+            supabase_request(
+                f"/rest/v1/usuarios?nombre=eq.{requests.utils.quote(nombre)}",
+                method="PATCH",
+                data={'scores': scores}
+            )
 
     return jsonify(resultado)
 
@@ -274,8 +288,9 @@ def api_interaccion():
     scores = body.get('scores', {})
     genero = body.get('genero', '')
     accion = body.get('accion', 'play')
+    aplicar_decay = body.get('aplicar_decay', False)  # True si se llevan muchas canciones en sesión
 
-    scores_actualizados = registrar_interaccion(scores, genero, accion)
+    scores_actualizados = registrar_interaccion(scores, genero, accion, aplicar_decay=aplicar_decay)
 
     return jsonify({"scores": scores_actualizados})
 

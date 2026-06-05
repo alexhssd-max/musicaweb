@@ -84,6 +84,9 @@ try {
     console.error("Error reading cached catalog:", e);
 }
 let historialEscucha = [];
+let generosPrevios = []; // Géneros favoritos de la sesión/visita anterior (para detectar cambio de gusto)
+let esNuevaVisita = true; // True solo la primera vez que se llama ejecutarIA en la sesión
+
 
 async function cargarCatalogo() {
     try {
@@ -780,6 +783,31 @@ function mostrarError(el, msg) {
     el.classList.remove("hidden");
 }
 
+/**
+ * Muestra un toast cuando la IA detecta un cambio de géneros favoritos durante la sesión.
+ * Por ejemplo: el usuario lleva 2h escuchando y cambió de Cumbia → Rock.
+ */
+function mostrarToastCambioGenero(nuevosGeneros) {
+    let toast = document.getElementById("toast-cambio-genero");
+    if (!toast) {
+        toast = document.createElement("div");
+        toast.id = "toast-cambio-genero";
+        toast.style.cssText = `
+            position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
+            background: linear-gradient(135deg, #7c3aed, #4f46e5);
+            color: #fff; padding: 12px 20px; border-radius: 12px;
+            font-size: 13px; z-index: 9999; box-shadow: 0 4px 20px rgba(124,58,237,0.5);
+            display: flex; align-items: center; gap: 8px; max-width: 340px;
+            animation: slideUpFade 0.4s ease;
+        `;
+        document.body.appendChild(toast);
+    }
+    toast.innerHTML = `🔄 <strong>¡Nuevo gusto detectado!</strong> La IA actualizó tus recomendaciones a: <em>${nuevosGeneros}</em>`;
+    toast.style.display = "flex";
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => { toast.style.display = "none"; }, 4000);
+}
+
 function mostrarPerfil() {
     const isLoggedIn = usuarioActivo && usuarioActivo.nombre !== "Invitado";
     const headerLoginBtn = document.getElementById("header-login-btn");
@@ -935,6 +963,9 @@ function actualizarPlaylists() {
 async function registrarInteraccion(cancion, accion) {
     if (!usuarioActivo || !cancion) return;
     const genero = cancion.genero;
+    // Activar Factor de Olvido en sesión después de 10 canciones escuchadas
+    // (para detectar cambios de gusto durante sesiones largas de 2-3 horas)
+    const aplicarDecay = historialEscucha.length >= 10;
 
     try {
         const res = await fetch("/api/interaccion", {
@@ -943,13 +974,14 @@ async function registrarInteraccion(cancion, accion) {
             body: JSON.stringify({
                 scores: usuarioActivo.scores,
                 genero: genero,
-                accion: accion
+                accion: accion,
+                aplicar_decay: aplicarDecay  // Activa decay de sesión tras 10 canciones
             })
         });
         if (res.ok) {
             const data = await res.json();
             usuarioActivo.scores = data.scores;
-            logIA(`[ML] ${accion} registrado para ${genero}.`);
+            logIA(`[ML] ${accion} registrado para ${genero}${aplicarDecay ? ' (con decay de sesión)' : ''}.`);
         }
     } catch (e) {
         console.error("Error en interacción RL:", e);
@@ -1023,13 +1055,35 @@ window.ejecutarIA = async function() {
                 nombre: usuarioActivo.nombre,
                 scores: usuarioActivo.scores,
                 likes: usuarioActivo.likes,
-                historial: historialEscucha
+                historial: historialEscucha,
+                generos_anteriores: generosPrevios,     // Para detectar si el gusto cambió
+                es_nueva_visita: esNuevaVisita          // Para aplicar decaimiento al entrar
             })
         });
 
         if (!res.ok) throw new Error("Error en servidor de recomendaciones");
 
         const data = await res.json();
+
+        // Marcar que ya no es nueva visita para esta sesión
+        esNuevaVisita = false;
+
+        // Actualizar scores si el backend aplicó decaimiento
+        if (data.scores_decaidos) {
+            usuarioActivo.scores = data.scores_decaidos;
+            guardarEstadoUsuario();
+        }
+
+        // Detectar y notificar cambio de gusto
+        if (data.cambio_genero && generosPrevios.length > 0) {
+            const nuevosGen = (data.top_generos || []).join(' & ');
+            mostrarToastCambioGenero(nuevosGen);
+        }
+
+        // Guardar géneros actuales como referencia para la próxima comparación
+        if (data.top_generos && data.top_generos.length > 0) {
+            generosPrevios = data.top_generos;
+        }
         
         // Loggear mensajes de la consola de IA del backend
         if (data.log) {
