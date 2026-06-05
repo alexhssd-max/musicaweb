@@ -167,7 +167,7 @@ function sanearNombreArchivo(nombre) {
         .replace(/_+/g, "_");
 }
 
-async function subirCancion(file, titulo, artista, genero, mood, imagenFile = null, imagenUrl = null, index = 1, total = 1) {
+async function subirCancion(file, titulo, artista, genero, mood, imagenFile = null, imagenUrl = null, index = 1, total = 1, bpm = 100, energia = 50) {
     if (total > 1) {
         mostrarToast(`⬆ Subiendo canción ${index} de ${total}: "${titulo}"...`);
     } else {
@@ -180,6 +180,8 @@ async function subirCancion(file, titulo, artista, genero, mood, imagenFile = nu
     formData.append("artista", artista);
     formData.append("genero", genero);
     formData.append("mood", mood);
+    formData.append("bpm", bpm);
+    formData.append("energia", energia);
     if (imagenFile) {
         formData.append("imagen", imagenFile);
     }
@@ -287,6 +289,11 @@ function inicializarModalSubida() {
             const artista = document.getElementById("upload-artista").value.trim();
             const genero = document.getElementById("upload-genero").value;
             const mood = document.getElementById("upload-mood").value;
+            
+            const bpmInput = document.getElementById("upload-bpm");
+            const bpm = bpmInput ? parseInt(bpmInput.value) || 100 : 100;
+            const energiaInput = document.getElementById("upload-energia");
+            const energia = energiaInput ? parseInt(energiaInput.value) || 50 : 50;
 
             const imageInput = document.getElementById("upload-image");
             const imagenFile = (imageInput && imageInput.files.length > 0) ? imageInput.files[0] : null;
@@ -324,7 +331,8 @@ function inicializarModalSubida() {
 
                 const res = await subirCancion(
                     file, titulo, artista, genero, mood, 
-                    imgFile, imgUrl, i + 1, files.length
+                    imgFile, imgUrl, i + 1, files.length,
+                    bpm, energia
                 );
                 
                 if (res.success) {

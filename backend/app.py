@@ -292,6 +292,17 @@ def api_subir():
     artista = request.form.get('artista', '')
     genero = request.form.get('genero', 'Pop')
     mood = request.form.get('mood', 'Energético')
+    
+    bpm = request.form.get('bpm', 100)
+    energia = request.form.get('energia', 50)
+    try:
+        bpm = int(bpm)
+    except Exception:
+        bpm = 100
+    try:
+        energia = int(energia)
+    except Exception:
+        energia = 50
 
     if not audio_file:
         return jsonify({"error": "No se proporcionó archivo de audio."}), 400
@@ -339,7 +350,9 @@ def api_subir():
         "genero": genero,
         "mood": mood,
         "url_audio": url_audio,
-        "url_imagen": url_imagen
+        "url_imagen": url_imagen,
+        "bpm": bpm,
+        "energia": energia
     }
 
     resp_insert = supabase_request(

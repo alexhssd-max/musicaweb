@@ -18,8 +18,10 @@
 #
 # =========================================================================
 
+import random
 import numpy as np
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import LabelEncoder
@@ -97,6 +99,30 @@ def obtener_artistas_preferidos(historial, likes, catalogo):
     return artistas
 
 
+def calcular_media_bpm_energia(historial, likes, catalogo):
+    """Calcula el BPM y energía promedio del usuario basado en historial y likes."""
+    bpm_vals = []
+    energia_vals = []
+    # Historial
+    for cancion in historial:
+        if 'bpm' in cancion and isinstance(cancion['bpm'], (int, float)):
+            bpm_vals.append(cancion['bpm'])
+        if 'energia' in cancion and isinstance(cancion['energia'], (int, float)):
+            energia_vals.append(cancion['energia'])
+    # Likes (peso doble)
+    liked_ids = set(likes)
+    for cancion in catalogo:
+        if cancion.get('id') in liked_ids:
+            if 'bpm' in cancion and isinstance(cancion['bpm'], (int, float)):
+                bpm_vals.append(cancion['bpm'] * 2)
+            if 'energia' in cancion and isinstance(cancion['energia'], (int, float)):
+                energia_vals.append(cancion['energia'] * 2)
+    # Default fallbacks
+    avg_bpm = sum(bpm_vals) / len(bpm_vals) if bpm_vals else 100
+    avg_energia = sum(energia_vals) / len(energia_vals) if energia_vals else 50
+    return avg_bpm, avg_energia
+
+
 # =========================================================================
 # [RECURSIVIDAD PURA] — Árbol de Decisión
 # =========================================================================
@@ -143,50 +169,54 @@ def evaluar_nodo_recursivo(sub_conjunto, nodos_restantes, criterios, log_lines):
 # =========================================================================
 
 def puntuar_cancion_ia(cancion, top_generos, artistas_preferidos, mood_preferido,
-                        ids_escuchados, scores, likes):
-    """
-    [MOTOR DE IA PRINCIPAL]
-    Puntúa cada canción del catálogo según el perfil del usuario.
-    Usa un sistema de scoring ponderado inspirado en collaborative filtering.
-    """
+                        ids_escuchados, scores, likes, avg_bpm, avg_energia):
+    """Puntúa cada canción incorporando BPM/Energy similarity."""
     score = 0.0
     motivos = []
 
-    # ── Factor 1: Género favorito (+10 para top-1, +6 para top-2)
+    # Factor 1: Género favorito (+10 para top-1, +6 para top-2)
     if len(top_generos) > 0 and cancion.get('genero') == top_generos[0]:
         score += 10
-        emoji = EMOJI_GENERO.get(top_generos[0], '🎵')
-        motivos.append(f"Te gusta {top_generos[0]} {emoji}")
+        motivos.append(f"Te gusta {top_generos[0]} {EMOJI_GENERO.get(top_generos[0], '🎵')}")
     elif len(top_generos) > 1 and cancion.get('genero') == top_generos[1]:
         score += 6
-        emoji = EMOJI_GENERO.get(top_generos[1], '🎵')
-        motivos.append(f"También escuchas {top_generos[1]} {emoji}")
+        motivos.append(f"También escuchas {top_generos[1]} {EMOJI_GENERO.get(top_generos[1], '🎵')}")
 
-    # ── Factor 2: Artista conocido (+5)
+    # Factor 2: Artista conocido (+5)
     if cancion.get('artista') in artistas_preferidos:
         score += 5
         motivos.append(f"Escuchaste a {cancion['artista']}")
 
-    # ── Factor 3: Mood coincidente (+3)
+    # Factor 3: Mood coincidente (+3)
     if mood_preferido and cancion.get('mood') == mood_preferido:
         score += 3
-        emoji = EMOJI_MOOD.get(mood_preferido, '')
-        motivos.append(f"Tu mood es {mood_preferido} {emoji}")
+        motivos.append(f"Tu mood es {mood_preferido} {EMOJI_MOOD.get(mood_preferido, '')}")
 
-    # ── Factor 4: Canción ya escuchada recientemente (-5)
+    # Factor 4: Canción ya escuchada recientemente (-5)
     if cancion.get('id') in ids_escuchados:
         score -= 5
 
-    # ── Factor 5: Score acumulado del género del usuario
+    # Factor 5: Score acumulado del género del usuario
     gen_score = scores.get(cancion.get('genero'), 0)
     if gen_score:
         score += min(gen_score * 0.5, 8)  # Máximo +8 puntos por score acumulado
 
-    # ── Factor 6: Bonus si la canción tiene like
+    # Factor 6: Bonus si la canción tiene like
     if cancion.get('id') in likes:
         score += 2
-        if not any('Te gusta' in m for m in motivos):
-            motivos.append('Está en tus favoritas ♥')
+        motivos.append('Está en tus favoritas ♥')
+
+    # Factor 7: BPM similarity (within ±10 BPM)
+    if 'bpm' in cancion and isinstance(cancion['bpm'], (int, float)):
+        if abs(cancion['bpm'] - avg_bpm) <= 10:
+            score += 2
+            motivos.append('BPM cercano a tu estilo')
+
+    # Factor 8: Energia similarity (within ±10)
+    if 'energia' in cancion and isinstance(cancion['energia'], (int, float)):
+        if abs(cancion['energia'] - avg_energia) <= 10:
+            score += 2
+            motivos.append('Energía adecuada')
 
     return {'score': score, 'motivos': motivos}
 
@@ -227,7 +257,6 @@ def predecir_con_red_neuronal(catalogo, scores):
             return None
 
         # Crear datos de entrenamiento
-        # X: vector one-hot del género, Y: score normalizado
         encoder = LabelEncoder()
         encoder.fit(generos)
 
@@ -240,25 +269,21 @@ def predecir_con_red_neuronal(catalogo, scores):
             X_train.append(one_hot)
 
             score_val = scores.get(genero, 0)
-            # Normalizar entre 0 y 1
             y_train.append(min(score_val / 20.0, 1.0))
 
         X_train = np.array(X_train)
         y_train = np.array(y_train)
 
-        # Entrenar red neuronal (Perceptrón Multicapa)
         red_neuronal = MLPClassifier(
             hidden_layer_sizes=(4,),
-            activation='logistic',  # sigmoid equivalente
+            activation='logistic',
             max_iter=100,
             learning_rate_init=0.3,
             random_state=42
         )
 
-        # Convertir a clasificación binaria para MLPClassifier
         y_classes = (y_train > 0.5).astype(int)
 
-        # Si todas las clases son iguales, no se puede entrenar
         if len(set(y_classes)) < 2:
             predicciones = {}
             for genero in generos:
@@ -268,7 +293,6 @@ def predecir_con_red_neuronal(catalogo, scores):
 
         red_neuronal.fit(X_train, y_classes)
 
-        # Predecir para cada género
         predicciones = {}
         probas = red_neuronal.predict_proba(X_train)
         for i, genero in enumerate(generos):
@@ -326,7 +350,6 @@ def entrenar_arbol_decision(catalogo, scores):
         if len(set(y)) < 2:
             return None
 
-        # Entrenar Árbol de Decisión
         arbol = DecisionTreeClassifier(
             criterion='entropy',
             max_depth=5,
@@ -348,140 +371,160 @@ def entrenar_arbol_decision(catalogo, scores):
 
 
 # =========================================================================
+# [RANDOM FOREST] — RandomForestClassifier
+# =========================================================================
+
+def entrenar_random_forest(catalogo, scores):
+    """Entrena un RandomForest sobre género y mood similar al árbol de decisión."""
+    if not catalogo or not scores:
+        return None
+    try:
+        generos = list(set(c.get('genero', '') for c in catalogo if c.get('genero')))
+        moods = list(set(c.get('mood', '') for c in catalogo if c.get('mood')))
+        if len(generos) < 2:
+            return None
+        enc_genero = LabelEncoder()
+        enc_mood = LabelEncoder()
+        enc_genero.fit(generos)
+        enc_mood.fit(moods if moods else ['Energético'])
+        X = []
+        y = []
+        for cancion in catalogo:
+            gen = cancion.get('genero', generos[0])
+            mood = cancion.get('mood', moods[0] if moods else 'Energético')
+            X.append([enc_genero.transform([gen])[0], enc_mood.transform([mood])[0]])
+            y.append(1 if scores.get(gen, 0) > 3 else 0)
+        X = np.array(X)
+        y = np.array(y)
+        if len(set(y)) < 2:
+            return None
+        rf = RandomForestClassifier(n_estimators=50, max_depth=5, random_state=42)
+        rf.fit(X, y)
+        return {
+            'modelo': rf,
+            'encoder_genero': enc_genero,
+            'encoder_mood': enc_mood,
+            'generos': generos,
+            'moods': moods
+        }
+    except Exception as e:
+        print(f"[RandomForest] Error entrenando: {e}")
+        return None
+
+
+# =========================================================================
 # FUNCIÓN PRINCIPAL: ejecutar_ia()
 # =========================================================================
 
 def ejecutar_ia(catalogo, scores, likes, historial):
-    """
-    Motor principal de recomendaciones de AuraBeat AI.
-    Combina: Árbol de Decisión + Scoring Ponderado + Similitud Coseno + Red Neuronal
-    """
+    """Motor principal de recomendaciones de AuraBeat AI con Random Forest y epsilon‑greedy."""
     log = []
     log.append("═══════════════════════════════════════════════")
     log.append("  INICIANDO MOTOR DE IA - AURABEAT AI (Python)")
     log.append("═══════════════════════════════════════════════")
-
-    log.append("[IA] scikit-learn (DecisionTree/MLP): ✅ Cargado")
+    log.append("[IA] scikit-learn (DecisionTree/RandomForest/MLP): ✅ Cargado")
     log.append("[IA] NumPy (vectores/tensores): ✅ Cargado")
-    log.append("[IA] sklearn.metrics (cosine_similarity): ✅ Cargado")
 
     if not catalogo:
         log.append("[IA] Catálogo vacío, no hay nada que recomendar.")
         return {'recomendaciones': [], 'log': log, 'top_generos': [], 'mood_preferido': None}
 
-    # ── 1. Obtener perfil del usuario
+    # 1. Perfil del usuario
     top_generos = obtener_top_generos(scores, 2)
     mood_preferido = calcular_mood_preferido(historial, likes, catalogo)
     artistas_preferidos = obtener_artistas_preferidos(historial, likes, catalogo)
     ids_escuchados = set(c.get('id') for c in historial)
+    avg_bpm, avg_energia = calcular_media_bpm_energia(historial, likes, catalogo)
 
     log.append(f"[ML] Perfil del usuario:")
     log.append(f"   Géneros top: {', '.join(top_generos) if top_generos else 'Sin datos'}")
     log.append(f"   Mood preferido: {mood_preferido or 'No determinado'}")
+    log.append(f"   BPM medio: {int(avg_bpm)} | Energia media: {int(avg_energia)}")
     log.append(f"   Artistas conocidos: {len(artistas_preferidos)}")
     log.append(f"   Canciones escuchadas: {len(ids_escuchados)}")
 
     if not top_generos and not artistas_preferidos:
         log.append("[IA] Sin preferencias detectadas. Mostrando catálogo completo.")
-        return {
-            'recomendaciones': catalogo,
-            'log': log,
-            'top_generos': top_generos,
-            'mood_preferido': mood_preferido
-        }
+        return {'recomendaciones': catalogo, 'log': log, 'top_generos': top_generos, 'mood_preferido': mood_preferido}
 
-    # ── 2. Red Neuronal MLP
+    # 2. Red Neuronal MLP
     predicciones_nn = predecir_con_red_neuronal(catalogo, scores)
     if predicciones_nn:
         pred_str = {k: f"{round(v * 100)}%" for k, v in predicciones_nn.items()}
         log.append(f"[MLP/Brain] Red neuronal entrenada. Predicciones: {pred_str}")
 
-    # ── 3. Árbol de Decisión J48
+    # 3. Árbol de Decisión
     arbol_info = entrenar_arbol_decision(catalogo, scores)
     if arbol_info:
         log.append("[Árbol J48] Árbol de decisión entrenado correctamente.")
 
-    # ── 4. Similitud Coseno
+    # 4. Random Forest
+    rf_info = entrenar_random_forest(catalogo, scores)
+    if rf_info:
+        log.append("[RandomForest] Bosque aleatorio entrenado exitosamente.")
+
+    # 5. Similitud Coseno
     bonus_coseno = {}
     if scores:
         log.append("[NumPy] Calculando vectores de similitud con tensores...")
         generos_lista = list(set(c.get('genero', '') for c in catalogo))
         user_vector = [scores.get(g, 0) for g in generos_lista]
-
         for cancion in catalogo:
             song_vector = [10 if g == cancion.get('genero') else 0 for g in generos_lista]
             sim = calcular_similitud_coseno(user_vector, song_vector)
             bonus_coseno[cancion.get('id')] = sim * 5
-
         log.append(f"[NumPy] Similitud calculada para {len(catalogo)} canciones.")
 
-    # ── 5. Aplicar Árbol de Decisión recursivo
+    # 6. Evaluar árbol recursivamente
     log.append("[Árbol de Decisión] Evaluando cada canción con recursividad...")
     criterios = {}
     if top_generos:
         criterios['genero'] = top_generos[0]
     if mood_preferido:
         criterios['mood'] = mood_preferido
-
     nodos = [dict(n) for n in ESTRUCTURA_ARBOL]
-    filtradas_arbol = evaluar_nodo_recursivo(list(catalogo), nodos, criteria_dict := criterios, log)
+    filtradas_arbol = evaluar_nodo_recursivo(list(catalogo), nodos, criterios, log)
 
-    # ── 6. Puntuar cada canción con el motor de scoring
+    # 7. Puntuar canciones con IA ponderada
     log.append("[Scoring] Puntuando canciones con IA ponderada...")
-
     canciones_con_score = []
     for cancion in catalogo:
         resultado = puntuar_cancion_ia(
             cancion, top_generos, artistas_preferidos,
-            mood_preferido, ids_escuchados, scores, likes
+            mood_preferido, ids_escuchados, scores, likes, avg_bpm, avg_energia
         )
-
         final_score = resultado['score']
-
         if cancion.get('id') in bonus_coseno:
             final_score += bonus_coseno[cancion['id']]
-
         if predicciones_nn and cancion.get('genero') in predicciones_nn:
             final_score += predicciones_nn[cancion['genero']] * 3
+        canciones_con_score.append({**cancion, '_score': final_score, '_motivos': resultado['motivos']})
 
-        canciones_con_score.append({
-            **cancion,
-            '_score': final_score,
-            '_motivos': resultado['motivos']
-        })
-
-    # ── 7. Ordenar por score descendente
+    # 8. Ordenar por score descendente
     canciones_con_score.sort(key=lambda c: c['_score'], reverse=True)
 
-    # ── 8. Filtrar
-    recomendadas = [c for c in canciones_con_score if c['_score'] > 0]
-    if top_generos:
-        recomendadas = [c for c in recomendadas if c.get('genero') in top_generos]
+    # 9. Aplicar epsilon‑greedy (15% exploración)
+    total = len(canciones_con_score)
+    n_explore = max(1, int(total * 0.15)) if total > 0 else 0
+    explore_pool = [c for c in canciones_con_score if c.get('genero') not in top_generos]
+    explore_selected = random.sample(explore_pool, min(n_explore, len(explore_pool)))
+    best_remaining = [c for c in canciones_con_score if c not in explore_selected]
+    recomendadas = best_remaining[:total - n_explore] + explore_selected
 
-    log.append(f"[IA] Resultado: {len(recomendadas)} canciones recomendadas de {len(catalogo)} totales.")
-
+    log.append(f"[IA] Resultado: {len(recomendadas)} canciones recomendadas de {total} totales.")
     if recomendadas:
         log.append("[IA] Top 3 recomendaciones:")
         for i, c in enumerate(recomendadas[:3]):
             motivos_str = ' | '.join(c.get('_motivos', []))
             log.append(f"   {i+1}. \"{c['titulo']}\" (score: {c['_score']:.1f}) → {motivos_str}")
-
     if not recomendadas:
-        if top_generos:
-            recomendadas = [c for c in canciones_con_score if c.get('genero') in top_generos]
-        else:
-            recomendadas = canciones_con_score
+        recomendadas = canciones_con_score[:]
 
     log.append("═══════════════════════════════════════════════")
     log.append("  MOTOR DE IA FINALIZADO (Python)")
     log.append("═══════════════════════════════════════════════")
 
-    return {
-        'recomendaciones': recomendadas,
-        'log': log,
-        'top_generos': top_generos,
-        'mood_preferido': mood_preferido
-    }
+    return {'recomendaciones': recomendadas, 'log': log, 'top_generos': top_generos, 'mood_preferido': mood_preferido}
 
 
 def registrar_interaccion(scores, genero, accion):
