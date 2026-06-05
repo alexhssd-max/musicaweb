@@ -257,12 +257,14 @@ function renderFeed() {
     card.className = "tiktok-card";
     card.id = `card-${index}`;
     card.setAttribute("data-index", index);
+    card.style.cursor = "pointer";
+    card.onclick = togglePlayPause;
 
     const isLiked = !!state.likedVideos[video.id];
     const isSaved = !!state.savedVideos[video.id];
     card.innerHTML = `
-      <!-- Contenedor del video: el onclick aquí es el ÚNICO punto de play/pausa -->
-      <div class="video-wrapper" id="player-container-${index}" onclick="togglePlayPause()" style="cursor:pointer;">
+      <!-- Contenedor del video -->
+      <div class="video-wrapper" id="player-container-${index}">
         <div class="video-loader"></div>
       </div>
 
