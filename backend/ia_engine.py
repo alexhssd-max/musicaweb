@@ -447,19 +447,28 @@ def ejecutar_ia(catalogo, scores, likes, historial):
         log.append("[IA] Sin preferencias detectadas. Mostrando catálogo completo.")
         return {'recomendaciones': catalogo, 'log': log, 'top_generos': top_generos, 'mood_preferido': mood_preferido}
 
+    # Filtrar el catálogo si el usuario ya tiene géneros preferidos definidos (máximo 2)
+    catalogo_filtrado = catalogo
+    if top_generos:
+        catalogo_filtrado = [c for c in catalogo if c.get('genero') in top_generos]
+        log.append(f"[IA] Catálogo filtrado estrictamente a los 2 géneros top del usuario: {', '.join(top_generos)} (Quedan {len(catalogo_filtrado)} de {len(catalogo)} canciones)")
+        if not catalogo_filtrado:
+            catalogo_filtrado = catalogo
+            log.append("[IA] Advertencia: El catálogo filtrado quedó vacío. Usando catálogo completo.")
+
     # 2. Red Neuronal MLP
-    predicciones_nn = predecir_con_red_neuronal(catalogo, scores)
+    predicciones_nn = predecir_con_red_neuronal(catalogo_filtrado, scores)
     if predicciones_nn:
         pred_str = {k: f"{round(v * 100)}%" for k, v in predicciones_nn.items()}
         log.append(f"[MLP/Brain] Red neuronal entrenada. Predicciones: {pred_str}")
 
     # 3. Árbol de Decisión
-    arbol_info = entrenar_arbol_decision(catalogo, scores)
+    arbol_info = entrenar_arbol_decision(catalogo_filtrado, scores)
     if arbol_info:
         log.append("[Árbol J48] Árbol de decisión entrenado correctamente.")
 
     # 4. Random Forest
-    rf_info = entrenar_random_forest(catalogo, scores)
+    rf_info = entrenar_random_forest(catalogo_filtrado, scores)
     if rf_info:
         log.append("[RandomForest] Bosque aleatorio entrenado exitosamente.")
 
@@ -467,13 +476,13 @@ def ejecutar_ia(catalogo, scores, likes, historial):
     bonus_coseno = {}
     if scores:
         log.append("[NumPy] Calculando vectores de similitud con tensores...")
-        generos_lista = list(set(c.get('genero', '') for c in catalogo))
+        generos_lista = list(set(c.get('genero', '') for c in catalogo_filtrado))
         user_vector = [scores.get(g, 0) for g in generos_lista]
-        for cancion in catalogo:
+        for cancion in catalogo_filtrado:
             song_vector = [10 if g == cancion.get('genero') else 0 for g in generos_lista]
             sim = calcular_similitud_coseno(user_vector, song_vector)
             bonus_coseno[cancion.get('id')] = sim * 5
-        log.append(f"[NumPy] Similitud calculada para {len(catalogo)} canciones.")
+        log.append(f"[NumPy] Similitud calculada para {len(catalogo_filtrado)} canciones.")
 
     # 6. Evaluar árbol recursivamente
     log.append("[Árbol de Decisión] Evaluando cada canción con recursividad...")
@@ -483,12 +492,12 @@ def ejecutar_ia(catalogo, scores, likes, historial):
     if mood_preferido:
         criterios['mood'] = mood_preferido
     nodos = [dict(n) for n in ESTRUCTURA_ARBOL]
-    filtradas_arbol = evaluar_nodo_recursivo(list(catalogo), nodos, criterios, log)
+    filtradas_arbol = evaluar_nodo_recursivo(list(catalogo_filtrado), nodos, criterios, log)
 
     # 7. Puntuar canciones con IA ponderada
     log.append("[Scoring] Puntuando canciones con IA ponderada...")
     canciones_con_score = []
-    for cancion in catalogo:
+    for cancion in catalogo_filtrado:
         resultado = puntuar_cancion_ia(
             cancion, top_generos, artistas_preferidos,
             mood_preferido, ids_escuchados, scores, likes, avg_bpm, avg_energia
@@ -503,10 +512,11 @@ def ejecutar_ia(catalogo, scores, likes, historial):
     # 8. Ordenar por score descendente
     canciones_con_score.sort(key=lambda c: c['_score'], reverse=True)
 
-    # 9. Aplicar epsilon‑greedy (15% exploración)
+    # 9. Aplicar epsilon‑greedy (15% exploración dentro de los 2 géneros permitidos)
     total = len(canciones_con_score)
     n_explore = max(1, int(total * 0.15)) if total > 0 else 0
-    explore_pool = [c for c in canciones_con_score if c.get('genero') not in top_generos]
+    # La piscina de exploración son canciones de la misma selección filtrada
+    explore_pool = canciones_con_score
     explore_selected = random.sample(explore_pool, min(n_explore, len(explore_pool)))
     best_remaining = [c for c in canciones_con_score if c not in explore_selected]
     recomendadas = best_remaining[:total - n_explore] + explore_selected
