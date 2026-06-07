@@ -6,7 +6,7 @@ const ORIGINAL_FETCH = window.fetch;
 window.fetch = function (input, init) {
     if (typeof input === "string" && input.startsWith("/api/")) {
         const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" || window.location.hostname === "";
-        const base = isLocalhost 
+        const base = isLocalhost
             ? (window.location.origin.includes("5000") ? "" : "http://localhost:5000")
             : "";
         return ORIGINAL_FETCH(base + input, init);
@@ -18,7 +18,7 @@ window.fetch = function (input, init) {
 function calcularSimilitudFuzzy(s1, s2) {
     s1 = s1.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]/g, "").trim();
     s2 = s2.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]/g, "").trim();
-    
+
     if (s1 === s2) return 1.0;
     if (s1.includes(s2) || s2.includes(s1)) return 0.85;
 
@@ -93,14 +93,14 @@ async function cargarCatalogo() {
         const res = await supabaseFetch("/catalogo");
         if (!res.ok) throw new Error("Error al cargar catálogo");
         const data = await res.json();
-        
+
         let newCatalogo = [];
         if (data.length > 0) {
             newCatalogo = data.sort((a, b) => a.titulo.localeCompare(b.titulo));
         }
 
         const isDifferent = JSON.stringify(newCatalogo) !== JSON.stringify(catalogoActual);
-        
+
         catalogoActual = newCatalogo;
         window.catalogoActual = catalogoActual;
         localStorage.setItem('aurabeat_cached_catalogo', JSON.stringify(catalogoActual));
@@ -205,9 +205,9 @@ async function subirCancion(file, titulo, artista, genero, mood, imagenFile = nu
         }
 
         const data = await uploadRes.json();
-        return { 
-            success: true, 
-            url_imagen: (data.cancion && data.cancion.url_imagen) ? data.cancion.url_imagen : null 
+        return {
+            success: true,
+            url_imagen: (data.cancion && data.cancion.url_imagen) ? data.cancion.url_imagen : null
         };
     } catch (e) {
         mostrarToast(`❌ Error de conexión al subir "${titulo}".`);
@@ -292,7 +292,7 @@ function inicializarModalSubida() {
             const artista = document.getElementById("upload-artista").value.trim();
             const genero = document.getElementById("upload-genero").value;
             const mood = document.getElementById("upload-mood").value;
-            
+
             const bpmInput = document.getElementById("upload-bpm");
             const bpm = bpmInput ? parseInt(bpmInput.value) || 100 : 100;
             const energiaInput = document.getElementById("upload-energia");
@@ -333,11 +333,11 @@ function inicializarModalSubida() {
                 const imgUrl = i > 0 ? lastUploadedImageUrl : null;
 
                 const res = await subirCancion(
-                    file, titulo, artista, genero, mood, 
+                    file, titulo, artista, genero, mood,
                     imgFile, imgUrl, i + 1, files.length,
                     bpm, energia
                 );
-                
+
                 if (res.success) {
                     exitos++;
                     if (i === 0 && res.url_imagen) {
@@ -464,7 +464,7 @@ function mostrarToast(msg) {
     }
 
     toast.style.borderColor = borderColor;
-    
+
     // Contenido maquetado con badges elegantes
     toast.innerHTML = `
         <span style="font-size:10px; display:inline-flex; align-items:center; justify-content:center; background:${iconColor}18; color:${iconColor}; padding:2px 8px; border-radius:20px; font-weight:800; letter-spacing:0.5px; text-transform:uppercase; border:1px solid ${iconColor}30; flex-shrink:0;">
@@ -990,21 +990,16 @@ async function registrarInteraccion(cancion, accion) {
     guardarEstadoUsuario();
     actualizarVistaGeneroFavorito();
 
-    const tabActiva = document.querySelector(".nav-item.active");
-    const enRecomendaciones = tabActiva && tabActiva.id === "btn-nav-recomendaciones";
-    if (enRecomendaciones && typeof window.ejecutarIA === "function") {
-        window.ejecutarIA();
-    }
 }
 
 function mostrarEsqueletoCargaRecomendaciones() {
     const container = document.getElementById("songs-list");
     if (!container) return;
-    
+
     container.classList.remove("grid-view");
     const trackHeader = document.getElementById("track-header");
     if (trackHeader) trackHeader.style.display = "none";
-    
+
     let rowsHtml = "";
     for (let i = 0; i < 5; i++) {
         rowsHtml += `
@@ -1023,7 +1018,7 @@ function mostrarEsqueletoCargaRecomendaciones() {
             </div>
         `;
     }
-    
+
     container.innerHTML = `
         <div class="recommendations-loading">
             <div class="loading-ai-header">
@@ -1038,12 +1033,12 @@ function mostrarEsqueletoCargaRecomendaciones() {
     `;
 }
 
-window.ejecutarIA = async function() {
+window.ejecutarIA = async function () {
     if (!usuarioActivo || usuarioActivo.nombre === "Invitado") {
         mostrarEstadoVacio();
         return;
     }
-    
+
     mostrarEsqueletoCargaRecomendaciones();
     logIA("Consultando motor de IA en servidor Python...");
 
@@ -1084,7 +1079,7 @@ window.ejecutarIA = async function() {
         if (data.top_generos && data.top_generos.length > 0) {
             generosPrevios = data.top_generos;
         }
-        
+
         // Loggear mensajes de la consola de IA del backend
         if (data.log) {
             data.log.forEach(msg => logIA(msg));
@@ -1092,7 +1087,7 @@ window.ejecutarIA = async function() {
 
         // Renderizar las canciones recomendadas ordenadas de A-Z
         if (data.recomendaciones) {
-            const recomendadasOrdenadas = [...data.recomendaciones].sort((a, b) => 
+            const recomendadasOrdenadas = [...data.recomendaciones].sort((a, b) =>
                 a.titulo.localeCompare(b.titulo)
             );
             renderizarCanciones(recomendadasOrdenadas);
@@ -1107,11 +1102,42 @@ window.ejecutarIA = async function() {
     }
 };
 
-window.guardarGustoRecomendado = function(top, mood) {
+// Actualiza scores en background sin borrar ni recargar la lista de canciones
+window.ejecutarIASilenciosa = async function () {
+    if (!usuarioActivo || usuarioActivo.nombre === "Invitado") return;
+    try {
+        const res = await fetch("/api/recomendar", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                nombre: usuarioActivo.nombre,
+                scores: usuarioActivo.scores,
+                likes: usuarioActivo.likes,
+                historial: historialEscucha,
+                generos_anteriores: generosPrevios,
+                es_nueva_visita: false
+            })
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.scores_decaidos) {
+            usuarioActivo.scores = data.scores_decaidos;
+            guardarEstadoUsuario();
+        }
+        if (data.top_generos && data.top_generos.length > 0) {
+            generosPrevios = data.top_generos;
+        }
+        // NO redibuja la lista para no interrumpir la reproducción
+    } catch (e) {
+        console.warn("[IA Silenciosa] Error ignorado:", e);
+    }
+};
+
+window.guardarGustoRecomendado = function (top, mood) {
     // Delegado al backend durante la llamada a /api/recomendar e /api/interaccion
 };
 
-window.calcularMoodPreferido = function(catalogo) {
+window.calcularMoodPreferido = function (catalogo) {
     return null;
 };
 
@@ -1847,7 +1873,7 @@ function renderizarBibliotecaPlaylists() {
             "linear-gradient(135deg, #fd746c 0%, #ff9068 100%)"
         ];
         const color = colors[idx % colors.length];
-        
+
         plCard.innerHTML = `
             <div class="album-cover" style="background: ${color}; display: flex; align-items: center; justify-content: center; font-size: 50px; color: white; position: relative; height: 160px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
                 ♪
@@ -1998,7 +2024,7 @@ function mostrarDetalleAlbum(album) {
                 btnBack.onclick = () => {
                     if (pageTitle) pageTitle.textContent = "Tu Biblioteca de Géneros";
                     heading.innerHTML = 'Tus Géneros <span>›</span>';
-                    
+
                     const libTabs = document.getElementById("library-tabs");
                     if (libTabs) {
                         libTabs.style.display = "flex";
@@ -2167,7 +2193,7 @@ function inicializarNavegacion() {
                 tabGen.classList.add("active");
                 tabGen.style.background = "linear-gradient(135deg, #2e77d0, #8a2be2)";
                 tabGen.style.color = "white";
-                
+
                 tabPl.classList.remove("active");
                 tabPl.style.background = "rgba(255,255,255,0.06)";
                 tabPl.style.color = "var(--text-muted)";
@@ -2194,11 +2220,11 @@ function inicializarNavegacion() {
             tabGen.classList.add("active");
             tabGen.style.background = "linear-gradient(135deg, #2e77d0, #8a2be2)";
             tabGen.style.color = "white";
-            
+
             tabPl.classList.remove("active");
             tabPl.style.background = "rgba(255,255,255,0.06)";
             tabPl.style.color = "var(--text-muted)";
-            
+
             if (pageTitle) pageTitle.textContent = "Tu Biblioteca de Géneros";
             if (heading) heading.innerHTML = 'Tus Géneros <span>›</span>';
             renderizarBiblioteca();
@@ -2209,11 +2235,11 @@ function inicializarNavegacion() {
             tabPl.classList.add("active");
             tabPl.style.background = "linear-gradient(135deg, #2e77d0, #8a2be2)";
             tabPl.style.color = "white";
-            
+
             tabGen.classList.remove("active");
             tabGen.style.background = "rgba(255,255,255,0.06)";
             tabGen.style.color = "var(--text-muted)";
-            
+
             if (pageTitle) pageTitle.textContent = "Tus Listas de Reproducción";
             if (heading) heading.innerHTML = 'Tus Playlists <span>›</span>';
             renderizarBibliotecaPlaylists();
@@ -2279,7 +2305,7 @@ function inicializarNavegacion() {
                 // Si ya estaba inicializada pero ya no es guest, asegurar de que la sección de input se muestre
                 const inputSection = document.querySelector('#community-view .comm-input-section');
                 if (inputSection) inputSection.style.display = 'block';
-                
+
                 // Actualizar avatar si el usuario cambió sesión
                 const myAvatar = document.getElementById('comm-my-avatar');
                 if (myAvatar && usuarioActivo) {
@@ -2399,10 +2425,10 @@ function inicializarNavegacion() {
                         searchInput.value = mejorCoincidencia.cancion.titulo;
                         aplicarFiltrosBusqueda();
                     }
-                    
+
                     // Actualizar el índice y reproducir
                     indiceActual = mejorCoincidencia.index;
-                    
+
                     const gradientes = [
                         'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)',
                         'linear-gradient(135deg, #2e0854 0%, #8a2be2 100%)',
@@ -2414,7 +2440,7 @@ function inicializarNavegacion() {
                         'linear-gradient(135deg, #e55d87 0%, #5fc3e4 100%)'
                     ];
                     const gradiente = gradientes[mejorCoincidencia.index % gradientes.length];
-                    
+
                     reproducirCancion(mejorCoincidencia.cancion, gradiente);
                     mostrarToast(`🎙 Reproduciendo: "${mejorCoincidencia.cancion.titulo}" (${Math.round(maximaSimilitud * 100)}% coincidencia)`);
                 } else {
@@ -2657,7 +2683,7 @@ window.abrirModalPlaylists = function (cancionId) {
     btnCrear.style.cssText = "padding: 12px; background: linear-gradient(135deg, #2e77d0, #8a2be2); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; text-align: center; margin-top: 14px; transition: background 0.2s, transform 0.1s;";
     btnCrear.onmouseover = () => { btnCrear.style.filter = "brightness(1.15)"; };
     btnCrear.onmouseout = () => { btnCrear.style.filter = "none"; };
-    
+
     btnCrear.onclick = () => {
         // Guardamos la canción actual para añadirla después de crear la playlist
         window.cancionIdEnEspera = cancionId;
@@ -2694,7 +2720,7 @@ window.abrirModalPlaylists = function (cancionId) {
                     setTimeout(() => inputNew.style.borderColor = "#2a2a2a", 1500);
                     return;
                 }
-                
+
                 // Creamos la playlist
                 usuarioActivo.playlists.push({ nombre, canciones: [] });
                 guardarEstadoUsuario();
@@ -3244,7 +3270,7 @@ async function inicializarComunidad() {
 
     // Polling inteligente para rendimiento de red óptimo
     if (comunidadPollInterval) clearInterval(comunidadPollInterval);
-    
+
     // Si estamos en modo local fallback, no necesitamos hacer polling de red inútil
     comunidadPollInterval = setInterval(async () => {
         if (!comunidadModoLocal) {
