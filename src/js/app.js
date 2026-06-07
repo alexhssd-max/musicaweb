@@ -506,39 +506,39 @@ audioPlayer.onended = () => {
         return;
     }
 
-    if (!listaActiva.length) return;
+    const celdas = document.querySelectorAll('.track-list-row');
+    if (celdas.length === 0) return;
 
     if (shuffleActivo) {
         let nuevoIdx;
         do {
-            nuevoIdx = Math.floor(Math.random() * listaActiva.length);
-        } while (nuevoIdx === indiceListaActiva && listaActiva.length > 1);
-        indiceListaActiva = nuevoIdx;
+            nuevoIdx = Math.floor(Math.random() * celdas.length);
+        } while (nuevoIdx === indiceActual && celdas.length > 1);
+        indiceActual = nuevoIdx;
     } else {
-        indiceListaActiva = (indiceListaActiva + 1) % listaActiva.length;
+        indiceActual = (indiceActual + 1) % celdas.length;
     }
-    indiceActual = indiceListaActiva;
-    reproducirCancion(listaActiva[indiceListaActiva], null);
+    celdas[indiceActual].click();
 };
 
 // Avanzar automáticamente si hay error de reproducción (canción sin audio, CORS, etc.)
 audioPlayer.onerror = () => {
     console.warn('[AuraBeat] Error al reproducir la canción. Avanzando a la siguiente...');
-    if (!listaActiva.length) return;
+    const celdas = document.querySelectorAll('.track-list-row');
+    if (celdas.length === 0) return;
 
     // Pequeño delay para evitar bucle infinito en dispositivos lentos
     setTimeout(() => {
         if (shuffleActivo) {
             let nuevoIdx;
             do {
-                nuevoIdx = Math.floor(Math.random() * listaActiva.length);
-            } while (nuevoIdx === indiceListaActiva && listaActiva.length > 1);
-            indiceListaActiva = nuevoIdx;
+                nuevoIdx = Math.floor(Math.random() * celdas.length);
+            } while (nuevoIdx === indiceActual && celdas.length > 1);
+            indiceActual = nuevoIdx;
         } else {
-            indiceListaActiva = (indiceListaActiva + 1) % listaActiva.length;
+            indiceActual = (indiceActual + 1) % celdas.length;
         }
-        indiceActual = indiceListaActiva;
-        reproducirCancion(listaActiva[indiceListaActiva], null);
+        celdas[indiceActual].click();
     }, 800);
 };
 
@@ -569,12 +569,6 @@ const STORAGE_SESSION_KEY = "mzb_active_session";
 let usuarioActivo = null;
 let cancionActual = null;
 let indiceActual = 0;
-
-// ── Lista activa de reproducción ──
-// Siempre refleja qué array de canciones se está usando (Inicio, Biblioteca, Recomendaciones, etc.)
-// El skip/prev/next y el autoplay navegan sobre esta lista, NO sobre el DOM.
-let listaActiva = [];
-let indiceListaActiva = 0;
 
 async function registrarUsuario(nombre, password, generoFav) {
     try {
@@ -665,8 +659,7 @@ function inicializarModal() {
         localStorage.setItem(STORAGE_SESSION_KEY, btoa(JSON.stringify(usuarioActivo)));
         cerrarModal();
         mostrarPerfil();
-        if (typeof window.recargarRecomendaciones === "function") window.recargarRecomendaciones();
-        else if (tieneHistorial()) {
+        if (tieneHistorial()) {
             if (typeof window.ejecutarIA === "function") window.ejecutarIA();
         } else {
             mostrarEstadoVacio();
@@ -719,9 +712,6 @@ function inicializarModal() {
         audioPlayer.pause();
         usuarioActivo = { nombre: "Invitado", scores: {}, likes: [], playlists: [] };
         historialEscucha = [];
-        listaActiva = [];
-        indiceListaActiva = 0;
-        if (typeof window.recargarRecomendaciones === "function") window.recargarRecomendaciones();
         document.getElementById("user-name-display").textContent = "Invitado";
         document.getElementById("user-fav-genre").textContent = "Fav: —";
         document.getElementById("auth-user-panel").classList.add("hidden");
@@ -1083,8 +1073,6 @@ window.ejecutarIA = async function () {
         if (data.cambio_genero && generosPrevios.length > 0) {
             const nuevosGen = (data.top_generos || []).join(' & ');
             mostrarToastCambioGenero(nuevosGen);
-            // Forzar recarga la próxima vez que el usuario entre a Recomendaciones
-            if (typeof window.recargarRecomendaciones === "function") window.recargarRecomendaciones();
         }
 
         // Guardar géneros actuales como referencia para la próxima comparación
@@ -1213,17 +1201,17 @@ function inicializarReproductor() {
 
     document.getElementById("btn-next").onclick = () => {
         registrarInteraccion(cancionActual, 'skip');
-        if (!listaActiva.length) return;
-        indiceListaActiva = (indiceListaActiva + 1) % listaActiva.length;
-        indiceActual = indiceListaActiva;
-        reproducirCancion(listaActiva[indiceListaActiva], null);
+        const celdas = document.querySelectorAll('.track-list-row');
+        if (!celdas.length) return;
+        indiceActual = (indiceActual + 1) % celdas.length;
+        celdas[indiceActual].click();
     };
 
     document.getElementById("btn-prev").onclick = () => {
-        if (!listaActiva.length) return;
-        indiceListaActiva = (indiceListaActiva - 1 + listaActiva.length) % listaActiva.length;
-        indiceActual = indiceListaActiva;
-        reproducirCancion(listaActiva[indiceListaActiva], null);
+        const celdas = document.querySelectorAll('.track-list-row');
+        if (!celdas.length) return;
+        indiceActual = (indiceActual - 1 + celdas.length) % celdas.length;
+        celdas[indiceActual].click();
     };
 
     document.getElementById("btn-play").onclick = () => {
@@ -1454,15 +1442,6 @@ function renderizarCanciones(lista) {
 
     const listaFinal = [...lista].sort((a, b) => a.titulo.localeCompare(b.titulo));
 
-    // ── Actualizar lista activa de reproducción ──
-    // Solo se actualiza si NO hay reproducción en curso (como Spotify:
-    // navegar entre tabs no interrumpe ni cambia la cola activa).
-    // listaActiva solo cambia cuando el usuario hace click en una canción.
-    if (!cancionActual || audioPlayer.paused) {
-        listaActiva = listaFinal;
-        indiceListaActiva = 0;
-    }
-
     listaFinal.forEach((c, index) => {
         const div = document.createElement("div");
         div.className = "track-list-row";
@@ -1514,7 +1493,6 @@ function renderizarCanciones(lista) {
 
         div.onclick = () => {
             indiceActual = index;
-            indiceListaActiva = index;
             reproducirCancion(c, gradient);
         };
 
@@ -1563,11 +1541,6 @@ function obtenerCoverUrl(artista, cancion = null) {
 function reproducirCancion(cancion, coverGradient) {
     cancionActual = cancion;
     localStorage.setItem('aurabeat_current_song', JSON.stringify(cancion));
-
-    // Sincronizar índice en listaActiva para que skip/next sean correctos
-    const idxEnLista = listaActiva.findIndex(c => c.id === cancion.id);
-    if (idxEnLista !== -1) indiceListaActiva = idxEnLista;
-
     document.getElementById("player-title").textContent = cancion.titulo;
     document.getElementById("player-artist").textContent = cancion.artista;
     document.getElementById("btn-play").textContent = "⏸";
@@ -2274,8 +2247,6 @@ function inicializarNavegacion() {
     }
 
     if (btnRecomendaciones) {
-        let recomendacionesCargadas = false;
-
         btnRecomendaciones.onclick = (e) => {
             e.preventDefault();
             cambiarTabActivo("btn-nav-recomendaciones");
@@ -2291,22 +2262,11 @@ function inicializarNavegacion() {
 
             if (tieneHistorial()) {
                 if (heading) heading.innerHTML = 'Recomendado para ti <span>›</span>';
-                // Solo ejecutar IA la primera vez — las siguientes visitas
-                // solo muestran lo que ya estaba sin interrumpir la reproducción
-                if (!recomendacionesCargadas) {
-                    recomendacionesCargadas = true;
-                    if (typeof window.ejecutarIA === "function") window.ejecutarIA();
-                    else renderizarCanciones(catalogoActual);
-                }
+                if (typeof window.ejecutarIA === "function") window.ejecutarIA();
+                else renderizarCanciones(catalogoActual);
             } else {
                 mostrarRecomendacionesVacias();
             }
-        };
-
-        // Permitir recargar recomendaciones manualmente si el usuario lo necesita
-        window.recargarRecomendaciones = function () {
-            recomendacionesCargadas = false;
-            if (typeof window.ejecutarIA === "function") window.ejecutarIA();
         };
     }
 
@@ -2536,8 +2496,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const btnForceIA = document.getElementById("btn-force-ia");
     if (btnForceIA) {
         btnForceIA.onclick = () => {
-            if (typeof window.recargarRecomendaciones === "function") window.recargarRecomendaciones();
-            else if (typeof window.ejecutarIA === "function") window.ejecutarIA();
+            if (typeof window.ejecutarIA === "function") window.ejecutarIA();
         };
     }
 
@@ -2837,12 +2796,6 @@ function renderizarCancionesPlaylist(lista, playlist, playlistIdx) {
 
     const listaOrdenada = [...lista].sort((a, b) => a.titulo.localeCompare(b.titulo));
 
-    // ── Actualizar lista activa para que skip/next navegue en esta playlist ──
-    if (!cancionActual || audioPlayer.paused) {
-        listaActiva = listaOrdenada;
-        indiceListaActiva = 0;
-    }
-
     listaOrdenada.forEach((c, index) => {
         const div = document.createElement("div");
         div.className = "track-list-row";
@@ -2877,7 +2830,6 @@ function renderizarCancionesPlaylist(lista, playlist, playlistIdx) {
 
         div.onclick = () => {
             indiceActual = index;
-            indiceListaActiva = index;
             reproducirCancion(c, gradient);
         };
 
