@@ -8,7 +8,7 @@
 #   ─────────────────────────────────────────┼────────────────────────────────────────
 #   sklearn.tree.DecisionTreeClassifier      │ weka.classifiers.trees.J48
 #   sklearn.ensemble.RandomForestClassifier  │ weka.classifiers.trees.RandomForest
-#   sklearn.neural_network.MLPClassifier     │ org.neuroph.nnet.MultiLayerPerceptron
+#   torch.nn.Module (MLP manual)             │ org.neuroph.nnet.MultiLayerPerceptron
 #   sklearn.metrics.pairwise.cosine_similarity │ smile.math.distance.CosineDistance
 #   numpy (ndarray, vectores, tensores)      │ org.nd4j.linalg.api.ndarray.INDArray
 #   numpy.dot / numpy.linalg.norm           │ org.nd4j.linalg.factory.Nd4j
@@ -20,9 +20,11 @@
 
 import random
 import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.neural_network import MLPClassifier
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import LabelEncoder
 
@@ -295,13 +297,41 @@ def calcular_similitud_coseno(user_vector, song_vector):
 
 
 # =========================================================================
-# [RED NEURONAL] — MLPClassifier de scikit-learn
+# [RED NEURONAL] — MLP con PyTorch (nn.Module)
 # =========================================================================
+
+class RedNeuronalMLP(nn.Module):
+    """
+    Red Neuronal Multicapa (MLP) construida con PyTorch.
+    Arquitectura: entrada (one-hot géneros) → capa oculta (8 neuronas, Sigmoid)
+                  → capa oculta (4 neuronas, Sigmoid) → salida (1 neurona, Sigmoid)
+
+    Equivalente Java: org.neuroph.nnet.MultiLayerPerceptron
+    """
+    def __init__(self, n_generos: int):
+        super(RedNeuronalMLP, self).__init__()
+        self.red = nn.Sequential(
+            nn.Linear(n_generos, 8),
+            nn.Sigmoid(),
+            nn.Linear(8, 4),
+            nn.Sigmoid(),
+            nn.Linear(4, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.red(x)
+
 
 def predecir_con_red_neuronal(catalogo, scores):
     """
-    Entrena una mini red neuronal con el historial del usuario
+    Entrena una mini red neuronal PyTorch con el historial del usuario
     para predecir qué géneros le gustarán más.
+
+    - Entrada: vector one-hot del género
+    - Salida: probabilidad (0-1) de que el usuario prefiera ese género
+    - Loss: BCELoss (Binary Cross-Entropy)
+    - Optimizador: Adam
     """
     if not scores or not catalogo:
         return None
@@ -311,55 +341,51 @@ def predecir_con_red_neuronal(catalogo, scores):
         if len(generos) < 2:
             return None
 
-        # Crear datos de entrenamiento
         encoder = LabelEncoder()
         encoder.fit(generos)
+        n = len(generos)
 
-        X_train = []
-        y_train = []
+        # --- Construir dataset de entrenamiento ---
+        X_list = []
+        y_list = []
         for genero in generos:
-            one_hot = [0.0] * len(generos)
+            one_hot = [0.0] * n
             idx = list(encoder.classes_).index(genero)
             one_hot[idx] = 1.0
-            X_train.append(one_hot)
-
+            X_list.append(one_hot)
             score_val = scores.get(genero, 0)
-            y_train.append(min(score_val / 20.0, 1.0))
+            y_list.append(min(score_val / 20.0, 1.0))
 
-        X_train = np.array(X_train)
-        y_train = np.array(y_train)
+        X_tensor = torch.tensor(X_list, dtype=torch.float32)   # shape: (n_generos, n_generos)
+        y_tensor = torch.tensor(y_list, dtype=torch.float32).unsqueeze(1)  # shape: (n_generos, 1)
 
-        red_neuronal = MLPClassifier(
-            hidden_layer_sizes=(4,),
-            activation='logistic',
-            max_iter=100,
-            learning_rate_init=0.3,
-            random_state=42
-        )
+        # --- Instanciar y entrenar la red ---
+        torch.manual_seed(42)
+        modelo = RedNeuronalMLP(n_generos=n)
+        criterio = nn.BCELoss()
+        optimizador = optim.Adam(modelo.parameters(), lr=0.05)
 
-        y_classes = (y_train > 0.5).astype(int)
+        modelo.train()
+        for _ in range(200):          # 200 épocas de entrenamiento
+            optimizador.zero_grad()
+            salida = modelo(X_tensor)
+            perdida = criterio(salida, y_tensor)
+            perdida.backward()
+            optimizador.step()
 
-        if len(set(y_classes)) < 2:
-            predicciones = {}
-            for genero in generos:
-                score_val = scores.get(genero, 0)
-                predicciones[genero] = min(score_val / 20.0, 1.0)
-            return predicciones
-
-        red_neuronal.fit(X_train, y_classes)
+        # --- Inferencia: obtener probabilidades por género ---
+        modelo.eval()
+        with torch.no_grad():
+            probabilidades = modelo(X_tensor).squeeze(1).numpy()
 
         predicciones = {}
-        probas = red_neuronal.predict_proba(X_train)
         for i, genero in enumerate(generos):
-            if probas.shape[1] > 1:
-                predicciones[genero] = float(probas[i][1])
-            else:
-                predicciones[genero] = float(probas[i][0])
+            predicciones[genero] = float(probabilidades[i])
 
         return predicciones
 
     except Exception as e:
-        print(f"[Brain/MLP] Red neuronal no disponible: {e}")
+        print(f"[Brain/MLP-PyTorch] Red neuronal no disponible: {e}")
         return None
 
 
@@ -477,7 +503,8 @@ def ejecutar_ia(catalogo, scores, likes, historial, generos_anteriores=None):
     log.append("═══════════════════════════════════════════════")
     log.append("  INICIANDO MOTOR DE IA - AURABEAT AI (Python)")
     log.append("═══════════════════════════════════════════════")
-    log.append("[IA] scikit-learn (DecisionTree/RandomForest/MLP): ✅ Cargado")
+    log.append("[IA] scikit-learn (DecisionTree/RandomForest): ✅ Cargado")
+    log.append("[IA] PyTorch (Red Neuronal MLP manual): ✅ Cargado")
     log.append("[IA] NumPy (vectores/tensores): ✅ Cargado")
 
     if not catalogo:
