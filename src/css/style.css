@@ -3708,3 +3708,236 @@ body {
         transform: rotate(360deg);
     }
 }
+
+/* =========================================================================
+   CARRUSEEL DE ARTISTAS MÁS ESCUCHADOS
+   ========================================================================= */
+.artists-carousel-container {
+    margin-bottom: 32px;
+    background: linear-gradient(135deg, rgba(13, 11, 37, 0.45) 0%, rgba(20, 15, 60, 0.3) 100%);
+    border: 1px solid rgba(138, 43, 226, 0.15);
+    border-radius: 16px;
+    padding: 20px 24px;
+    box-shadow: 0 8px 30px rgba(94, 23, 235, 0.08);
+    backdrop-filter: blur(12px);
+    transition: transform 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.artists-carousel-container:hover {
+    border-color: rgba(138, 43, 226, 0.35);
+    box-shadow: 0 10px 35px rgba(94, 23, 235, 0.12);
+}
+
+.artists-carousel-container.hidden {
+    display: none !important;
+}
+
+.carousel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.carousel-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: white;
+    letter-spacing: -0.3px;
+    margin: 0;
+}
+
+.carousel-nav-buttons {
+    display: flex;
+    gap: 6px;
+}
+
+.carousel-nav-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: white;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    outline: none;
+}
+
+.carousel-nav-btn:hover {
+    background: rgba(138, 43, 226, 0.25);
+    border-color: rgba(138, 43, 226, 0.45);
+    transform: scale(1.06);
+}
+
+.carousel-track-wrapper {
+    overflow: hidden;
+    width: 100%;
+}
+
+.carousel-track {
+    display: flex;
+    gap: 20px;
+    overflow-x: auto;
+    scroll-behavior: smooth;
+    scrollbar-width: none; /* Firefox */
+    padding: 8px 4px;
+}
+
+.carousel-track::-webkit-scrollbar {
+    display: none; /* Safari and Chrome */
+}
+
+/* Centrar pista de artistas */
+#artists-carousel-track {
+    justify-content: safe center;
+}
+
+/* ── Tarjetas circulares para Artistas ── */
+.artist-card {
+    flex: 0 0 115px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    padding: 6px;
+}
+
+.artist-avatar {
+    width: 86px;
+    height: 86px;
+    border-radius: 50% !important;
+    overflow: hidden;
+    margin-bottom: 10px;
+    position: relative;
+    box-shadow: 0 6px 15px rgba(0, 0, 0, 0.45);
+    border: 2px solid rgba(255, 255, 255, 0.08);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Hover effects: zoom + aura glow */
+.artist-card:hover .artist-avatar {
+    transform: scale(1.08) translateY(-4px);
+    border-color: var(--accent-purple);
+    box-shadow: 0 0 18px rgba(138, 43, 226, 0.6), 0 8px 20px rgba(0, 0, 0, 0.6);
+}
+
+.artist-name {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: white;
+    margin-top: 4px;
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
+}
+
+.artist-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
+}
+
+/* ── Carrusel de Canciones más escuchadas ── */
+.songs-carousel-container {
+    background: linear-gradient(135deg, rgba(46, 119, 208, 0.08) 0%, rgba(138, 43, 226, 0.06) 100%);
+    border-color: rgba(46, 119, 208, 0.18);
+}
+
+.song-carousel-card {
+    flex: 0 0 140px;
+    display: flex;
+    flex-direction: column;
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.song-carousel-card:hover {
+    transform: translateY(-6px);
+    border-color: rgba(46, 119, 208, 0.4);
+    box-shadow: 0 8px 24px rgba(46, 119, 208, 0.2);
+}
+
+.song-card-cover {
+    width: 100%;
+    height: 140px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.song-card-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease;
+}
+
+.song-carousel-card:hover .song-card-cover img {
+    transform: scale(1.08);
+}
+
+.song-card-play-icon {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.45);
+    color: white;
+    font-size: 28px;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+    backdrop-filter: blur(2px);
+}
+
+.song-carousel-card:hover .song-card-play-icon {
+    opacity: 1;
+}
+
+.song-card-info {
+    padding: 10px 10px 12px;
+}
+
+.song-card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: white;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 3px;
+}
+
+.song-card-artist {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
