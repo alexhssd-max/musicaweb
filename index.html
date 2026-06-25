@@ -430,8 +430,37 @@
                         <button class="pill" data-filter="Rap">Rap</button>
                     </div>
 
+                    <!-- Carrusel de Artistas más escuchados -->
+                    <div id="artists-carousel-container" class="artists-carousel-container" style="display:none;">
+                        <div class="carousel-header">
+                            <h3 class="carousel-title">Top 5 Artistas 🎧</h3>
+                            <div class="carousel-nav-buttons">
+                                <button class="carousel-nav-btn prev-btn" id="btn-carousel-prev" title="Anterior">‹</button>
+                                <button class="carousel-nav-btn next-btn" id="btn-carousel-next" title="Siguiente">›</button>
+                            </div>
+                        </div>
+                        <div class="carousel-track-wrapper">
+                            <div class="carousel-track" id="artists-carousel-track">
+                                <!-- Artistas dinámicos se cargarán aquí -->
+                            </div>
+                        </div>
+                    </div>
 
-
+                    <!-- Carrusel de Canciones más escuchadas -->
+                    <div id="songs-carousel-container" class="artists-carousel-container songs-carousel-container" style="display:none;">
+                        <div class="carousel-header">
+                            <h3 class="carousel-title">Canciones más escuchadas 🔥</h3>
+                            <div class="carousel-nav-buttons">
+                                <button class="carousel-nav-btn prev-btn" id="btn-songs-carousel-prev" title="Anterior">‹</button>
+                                <button class="carousel-nav-btn next-btn" id="btn-songs-carousel-next" title="Siguiente">›</button>
+                            </div>
+                        </div>
+                        <div class="carousel-track-wrapper">
+                            <div class="carousel-track" id="songs-carousel-track">
+                                <!-- Canciones dinámicas se cargarán aquí -->
+                            </div>
+                        </div>
+                    </div>
                     <!-- Cuadrícula de Canciones (Convertida a Lista) -->
                     <section class="tracks-section">
                         <div class="list-header-title">
