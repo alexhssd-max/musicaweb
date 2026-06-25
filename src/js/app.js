@@ -87,6 +87,14 @@ let historialEscucha = [];
 let generosPrevios = []; // Géneros favoritos de la sesión/visita anterior (para detectar cambio de gusto)
 let esNuevaVisita = true; // True solo la primera vez que se llama ejecutarIA en la sesión
 
+// Caché de recomendaciones e información de gusto del usuario
+let cachedRecomendaciones = null;
+let lastRecommendationUser = null;
+let lastRecommendationScores = null;
+let lastRecommendationLikes = null;
+let lastRecommendationHistorial = null;
+let lastRecommendationGenres = null;
+
 
 async function cargarCatalogo() {
     try {
@@ -501,7 +509,9 @@ audioPlayer.onended = () => {
 
     if (repeatActivo) {
         audioPlayer.currentTime = 0;
-        audioPlayer.play();
+        audioPlayer.play().catch(e => {
+            console.error("Error al autoreproducir:", e);
+        });
         if (disc) disc.classList.add("spinning");
         return;
     }
@@ -660,7 +670,7 @@ function inicializarModal() {
         cerrarModal();
         mostrarPerfil();
         if (tieneHistorial()) {
-            if (typeof window.ejecutarIA === "function") window.ejecutarIA();
+            if (typeof window.ejecutarIA === "function") window.ejecutarIA(true);
         } else {
             mostrarEstadoVacio();
         }
@@ -701,7 +711,7 @@ function inicializarModal() {
         cerrarModal();
         mostrarPerfil();
         if (tieneHistorial()) {
-            if (typeof window.ejecutarIA === "function") window.ejecutarIA();
+            if (typeof window.ejecutarIA === "function") window.ejecutarIA(true);
         } else {
             mostrarEstadoVacio();
         }
@@ -712,6 +722,15 @@ function inicializarModal() {
         audioPlayer.pause();
         usuarioActivo = { nombre: "Invitado", scores: {}, likes: [], playlists: [] };
         historialEscucha = [];
+
+        // Limpiar caché de recomendaciones
+        cachedRecomendaciones = null;
+        lastRecommendationUser = null;
+        lastRecommendationScores = null;
+        lastRecommendationLikes = null;
+        lastRecommendationHistorial = null;
+        lastRecommendationGenres = null;
+
         document.getElementById("user-name-display").textContent = "Invitado";
         document.getElementById("user-fav-genre").textContent = "Fav: —";
         document.getElementById("auth-user-panel").classList.add("hidden");
@@ -1033,12 +1052,66 @@ function mostrarEsqueletoCargaRecomendaciones() {
     `;
 }
 
-window.ejecutarIA = async function () {
+function calcularTopGenerosFront(scores, historial, n = 2) {
+    if (!scores && (!historial || historial.length === 0)) {
+        return [];
+    }
+
+    // 1. Calcular scores del historial reciente (últimas 20 canciones)
+    const recientes = (historial || []).slice(-20);
+    const recienteConteo = {};
+    recientes.forEach(cancion => {
+        const gen = cancion.genero;
+        if (gen) {
+            recienteConteo[gen] = (recienteConteo[gen] || 0) + 1;
+        }
+    });
+
+    // 2. Combinar: 70% historial reciente + 30% scores históricos
+    const scoresCombinados = {};
+    const todosGeneros = new Set([
+        ...Object.keys(scores || {}),
+        ...Object.keys(recienteConteo)
+    ]);
+
+    todosGeneros.forEach(gen => {
+        const scoreHist = (scores || {})[gen] || 0;
+        const scoreRec = (recienteConteo[gen] || 0) * 3; // Escalar conteo reciente
+        scoresCombinados[gen] = Number((scoreRec * 0.70 + scoreHist * 0.30).toFixed(2));
+    });
+
+    // 3. Ordenar desc y tomar los top n
+    const sortedGenres = Object.entries(scoresCombinados)
+        .sort((a, b) => b[1] - a[1]);
+
+    return sortedGenres.slice(0, n).map(entry => entry[0]);
+}
+
+window.ejecutarIA = async function (force = false) {
     if (!usuarioActivo || usuarioActivo.nombre === "Invitado") {
         mostrarEstadoVacio();
         return;
     }
 
+    const currentScoresStr = JSON.stringify(usuarioActivo.scores || {});
+    const currentLikesStr = JSON.stringify(usuarioActivo.likes || []);
+    const currentHistorialStr = JSON.stringify((historialEscucha || []).map(c => c.id));
+    const currentUser = usuarioActivo.nombre;
+    const currentTopGenresStr = JSON.stringify(calcularTopGenerosFront(usuarioActivo.scores, historialEscucha, 2));
+
+    // Si el gusto no cambió a nivel de géneros top, usar la caché directamente sin skeleton
+    if (
+        !force &&
+        cachedRecomendaciones &&
+        lastRecommendationUser === currentUser &&
+        lastRecommendationGenres === currentTopGenresStr
+    ) {
+        logIA("Los géneros top recomendados no han cambiado (" + currentTopGenresStr + "). Mostrando recomendaciones desde la caché.");
+        renderizarCanciones(cachedRecomendaciones);
+        return;
+    }
+
+    // Solo mostrar skeleton cuando realmente necesitamos consultar el servidor
     mostrarEsqueletoCargaRecomendaciones();
     logIA("Consultando motor de IA en servidor Python...");
 
@@ -1090,6 +1163,15 @@ window.ejecutarIA = async function () {
             const recomendadasOrdenadas = [...data.recomendaciones].sort((a, b) =>
                 a.titulo.localeCompare(b.titulo)
             );
+
+            // Guardar en caché local
+            cachedRecomendaciones = recomendadasOrdenadas;
+            lastRecommendationUser = currentUser;
+            lastRecommendationScores = JSON.stringify(usuarioActivo.scores || {});
+            lastRecommendationLikes = currentLikesStr;
+            lastRecommendationHistorial = currentHistorialStr;
+            lastRecommendationGenres = currentTopGenresStr;
+
             renderizarCanciones(recomendadasOrdenadas);
         }
     } catch (e) {
@@ -1226,7 +1308,11 @@ function inicializarReproductor() {
             return;
         }
         if (audioPlayer.paused) {
-            audioPlayer.play().catch(e => mostrarToast("⚠ No hay audio disponible para esta canción: " + e.message));
+            audioPlayer.play().catch(e => {
+                if (e.name !== 'AbortError' && !e.message.includes('interrupted by a call to pause')) {
+                    mostrarToast("⚠ No hay audio disponible para esta canción: " + e.message);
+                }
+            });
             document.getElementById("btn-play").textContent = "⏸";
             if (disc) disc.classList.add("spinning");
         } else {
@@ -1615,10 +1701,15 @@ function reproducirCancion(cancion, coverGradient) {
     const filaDOM = document.getElementById(`track-${cancion.id}`);
     if (filaDOM) filaDOM.classList.add('playing');
 
-    if (!historialEscucha.find(h => h.id === cancion.id)) {
-        historialEscucha.push(cancion);
-    }
+    historialEscucha.push(cancion);
     registrarInteraccion(cancion, 'play');
+
+    // Re-renderizar carruseles si la sección de Inicio está activa
+    const isInicioActive = document.getElementById('btn-nav-inicio')?.classList.contains('active') ||
+                           localStorage.getItem('aurabeat_active_tab') === 'btn-nav-inicio';
+    if (isInicioActive) {
+        inicializarCarruseles();
+    }
 
     audioPlayer.pause();
     audioPlayer.removeAttribute('src');
@@ -1635,7 +1726,9 @@ function reproducirCancion(cancion, coverGradient) {
                 })
                 .catch(e => {
                     console.error("Error al reproducir audio:", e);
-                    mostrarToast("⚠ Error al reproducir: " + e.message);
+                    if (e.name !== 'AbortError' && !e.message.includes('interrupted by a call to pause')) {
+                        mostrarToast("⚠ Error al reproducir: " + e.message);
+                    }
                     document.getElementById("btn-play").textContent = "▶";
                 });
         }, 50);
@@ -2146,6 +2239,151 @@ function cargarCancionEnPlayer(cancion) {
     if (filaDOM) filaDOM.classList.add('playing');
 }
 
+// =========================================================================
+// CARRUSELES DE INICIO (Artistas, Canciones, Álbumes)
+// =========================================================================
+function inicializarCarruseles() {
+    const catalogo = catalogoActual || [];
+
+    // ── Carrusel de Artistas ──
+    const artistasTrack = document.getElementById('artists-carousel-track');
+    if (artistasTrack) {
+        artistasTrack.innerHTML = '';
+        
+        // Contar reproducciones reales de cada artista en el historial
+        const playCounts = {};
+        historialEscucha.forEach(c => {
+            if (c && c.artista) {
+                playCounts[c.artista] = (playCounts[c.artista] || 0) + 1;
+            }
+        });
+
+        // Agrupar por artista y contar canciones en catálogo + play count
+        const artMap = {};
+        catalogo.forEach(c => {
+            if (!artMap[c.artista]) {
+                artMap[c.artista] = { 
+                    nombre: c.artista, 
+                    songCount: 0, 
+                    playCount: playCounts[c.artista] || 0, 
+                    cancion: c 
+                };
+            }
+            artMap[c.artista].songCount++;
+        });
+
+        // Ordenar primero por reproducciones desc, luego por cantidad de canciones desc
+        const artistas = Object.values(artMap).sort((a, b) => {
+            if (b.playCount !== a.playCount) {
+                return b.playCount - a.playCount;
+            }
+            return b.songCount - a.songCount;
+        }).slice(0, 5); // Limitamos al top 5
+
+        const coloresArtista = [
+            'linear-gradient(135deg, #5e17eb, #8a2be2)',
+            'linear-gradient(135deg, #007aff, #5e17eb)',
+            'linear-gradient(135deg, #e91e8c, #8a2be2)',
+            'linear-gradient(135deg, #00b4d8, #0077b6)',
+            'linear-gradient(135deg, #f77f00, #e63946)'
+        ];
+
+        if (artistas.length === 0) {
+            artistasTrack.innerHTML = '<p style="color:var(--text-muted); padding: 20px; font-size:13px;">Aún no hay artistas en el catálogo.</p>';
+        } else {
+            artistas.forEach((art, i) => {
+                const coverUrl = obtenerCoverUrl(art.nombre, art.cancion);
+                const color = coloresArtista[i % coloresArtista.length];
+                const card = document.createElement('div');
+                card.className = 'artist-card';
+                
+                // Mostrar cuántas veces se ha escuchado o fallback al total de canciones
+                const metaText = art.playCount > 0 
+                    ? `${art.playCount} reproducción${art.playCount !== 1 ? 'es' : ''}` 
+                    : `${art.songCount} canción${art.songCount !== 1 ? 'es' : ''}`;
+
+                card.innerHTML = `
+                    <div class="artist-avatar" style="background: ${color}; overflow: hidden;">
+                        <img src="${coverUrl}" alt="${art.nombre}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.onerror=null;this.parentElement.innerHTML='${art.nombre.charAt(0).toUpperCase()}';">
+                    </div>
+                    <div class="artist-name">${art.nombre}</div>
+                    <div class="artist-meta">${metaText}</div>
+                `;
+                card.onclick = () => {
+                    const songs = catalogo.filter(c => c.artista === art.nombre);
+                    const heading = document.getElementById('section-heading-rec');
+                    if (heading) heading.innerHTML = `${art.nombre} <span>›</span>`;
+                    renderizarCanciones(songs);
+                    document.querySelector('.tracks-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                };
+                artistasTrack.appendChild(card);
+            });
+        }
+
+        // Botones de navegación artistas
+        const btnPrev = document.getElementById('btn-carousel-prev');
+        const btnNext = document.getElementById('btn-carousel-next');
+        const wrapper = artistasTrack;
+        if (btnPrev) btnPrev.onclick = () => { wrapper.scrollBy({ left: -320, behavior: 'smooth' }); };
+        if (btnNext) btnNext.onclick = () => { wrapper.scrollBy({ left: 320, behavior: 'smooth' }); };
+    }
+
+    // ── Carrusel de Canciones más escuchadas ──
+    const songsTrack = document.getElementById('songs-carousel-track');
+    if (songsTrack) {
+        songsTrack.innerHTML = '';
+        // Usar historial de escucha o primeras del catálogo
+        let topSongs = [...catalogo];
+        if (historialEscucha && historialEscucha.length > 0) {
+            // Ordenar por frecuencia en historial
+            const freqMap = {};
+            historialEscucha.forEach(c => { freqMap[c.id] = (freqMap[c.id] || 0) + 1; });
+            topSongs = [...catalogo].sort((a, b) => (freqMap[b.id] || 0) - (freqMap[a.id] || 0));
+        }
+        topSongs = topSongs.slice(0, 20);
+
+        const gradSongs = [
+            'linear-gradient(135deg, #2e77d0, #8a2be2)',
+            'linear-gradient(135deg, #00d2ff, #3a7bd5)',
+            'linear-gradient(135deg, #4A00E0, #8E2DE2)',
+            'linear-gradient(135deg, #007aff, #5e17eb)',
+            'linear-gradient(135deg, #e91e8c, #8a2be2)',
+            'linear-gradient(135deg, #f77f00, #e63946)'
+        ];
+
+        if (topSongs.length === 0) {
+            songsTrack.innerHTML = '<p style="color:var(--text-muted); padding: 20px; font-size:13px;">Aún no hay canciones en el catálogo.</p>';
+        } else {
+            topSongs.forEach((c, i) => {
+                const coverUrl = obtenerCoverUrl(c.artista, c);
+                const grad = gradSongs[i % gradSongs.length];
+                const card = document.createElement('div');
+                card.className = 'song-carousel-card';
+                card.innerHTML = `
+                    <div class="song-card-cover" style="background:${grad};">
+                        <img src="${coverUrl}" alt="${c.titulo}" loading="lazy" onerror="this.onerror=null;this.style.display='none';">
+                        <div class="song-card-play-icon">▶</div>
+                    </div>
+                    <div class="song-card-info">
+                        <div class="song-card-title">${c.titulo}</div>
+                        <div class="song-card-artist">${c.artista}</div>
+                    </div>
+                `;
+                card.onclick = () => {
+                    indiceActual = i;
+                    reproducirCancion(c, grad);
+                };
+                songsTrack.appendChild(card);
+            });
+        }
+        const btnSPrev = document.getElementById('btn-songs-carousel-prev');
+        const btnSNext = document.getElementById('btn-songs-carousel-next');
+        if (btnSPrev) btnSPrev.onclick = () => { songsTrack.scrollBy({ left: -320, behavior: 'smooth' }); };
+        if (btnSNext) btnSNext.onclick = () => { songsTrack.scrollBy({ left: 320, behavior: 'smooth' }); };
+    }
+
+}
+
 function inicializarNavegacion() {
     const btnInicio = document.getElementById("btn-nav-inicio");
     const btnBiblioteca = document.getElementById("btn-nav-biblioteca");
@@ -2154,8 +2392,6 @@ function inicializarNavegacion() {
     const searchInput = document.getElementById("search-input");
     const pageTitle = document.getElementById("page-title");
     const heading = document.getElementById("section-heading-rec");
-
-
 
     const irAInicio = () => {
         cambiarTabActivo("btn-nav-inicio");
@@ -2173,6 +2409,13 @@ function inicializarNavegacion() {
         if (scrollContent) scrollContent.style.display = '';
         if (filterPills) filterPills.style.display = 'flex';
 
+        // Mostrar carruseles
+        const artistasCarousel = document.getElementById('artists-carousel-container');
+        const songsCarousel = document.getElementById('songs-carousel-container');
+        if (artistasCarousel) artistasCarousel.style.display = '';
+        if (songsCarousel) songsCarousel.style.display = '';
+
+        inicializarCarruseles();
         renderizarCanciones(catalogoActual);
     };
 
@@ -2198,6 +2441,12 @@ function inicializarNavegacion() {
                 tabPl.style.background = "rgba(255,255,255,0.06)";
                 tabPl.style.color = "var(--text-muted)";
             }
+
+            // Ocultar carruseles de inicio en biblioteca
+            const artistasCarousel = document.getElementById('artists-carousel-container');
+            const songsCarousel = document.getElementById('songs-carousel-container');
+            if (artistasCarousel) artistasCarousel.style.display = 'none';
+            if (songsCarousel) songsCarousel.style.display = 'none';
 
             // Mostrar vistas normales, ocultar comunidad
             const commView = document.getElementById('community-view');
@@ -2252,6 +2501,12 @@ function inicializarNavegacion() {
             cambiarTabActivo("btn-nav-recomendaciones");
             if (pageTitle) pageTitle.textContent = "Recomendaciones Personalizadas IA";
 
+            // Ocultar carruseles de inicio en recomendaciones
+            const artistasCarousel = document.getElementById('artists-carousel-container');
+            const songsCarousel = document.getElementById('songs-carousel-container');
+            if (artistasCarousel) artistasCarousel.style.display = 'none';
+            if (songsCarousel) songsCarousel.style.display = 'none';
+
             // Ocultar comunidad, mostrar sección principal
             const commView = document.getElementById('community-view');
             const tracksSection = document.querySelector('.tracks-section');
@@ -2288,6 +2543,12 @@ function inicializarNavegacion() {
             if (scrollContent) scrollContent.style.display = 'none';
             if (lyricsView) lyricsView.classList.add('hidden');
             if (filterPills) filterPills.style.display = 'none';
+
+            // Ocultar carruseles (solo son de Inicio)
+            ['artists-carousel-container', 'songs-carousel-container'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = 'none';
+            });
 
             // Mostrar vista comunidad
             const commView = document.getElementById('community-view');
@@ -2496,7 +2757,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const btnForceIA = document.getElementById("btn-force-ia");
     if (btnForceIA) {
         btnForceIA.onclick = () => {
-            if (typeof window.ejecutarIA === "function") window.ejecutarIA();
+            if (typeof window.ejecutarIA === "function") window.ejecutarIA(true);
         };
     }
 
